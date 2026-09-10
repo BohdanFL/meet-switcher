@@ -173,7 +173,8 @@ export class ClassroomWall {
         existing.cardEl.title = `Закріпити екран ${share.participantName} (Alt + ${share.index})`;
         existing.numberEl.textContent = `${share.index}`;
         existing.nameEl.textContent = share.participantName;
-        existing.statusEl.textContent = share.isPinned ? '📌 В центрі' : '🖥️';
+        existing.statusEl.textContent = share.isPinned ? '📌 В центрі' : '';
+        existing.statusEl.style.display = share.isPinned ? 'inline' : 'none';
 
         if (
           share.videoElement &&
@@ -189,20 +190,12 @@ export class ClassroomWall {
         card.title = `Закріпити екран ${share.participantName} (Alt + ${share.index})`;
 
         card.innerHTML = `
-          <div class="wall-card-header">
-            <div class="wall-card-title">
-              <span class="wall-card-number">${share.index}</span>
-              <span class="wall-card-name">${this.escapeHtml(share.participantName)}</span>
-            </div>
-            <div class="wall-card-status">
-              ${share.isPinned ? '📌 В центрі' : '🖥️'}
-            </div>
+          <div class="wall-card-badge">
+            <span class="wall-card-number">${share.index}</span>
+            <span class="wall-card-name">${this.escapeHtml(share.participantName)}</span>
+            <span class="wall-card-status" style="${share.isPinned ? '' : 'display: none;'}">📌 В центрі</span>
           </div>
-          <div class="wall-video-wrap">
-            <div class="wall-hover-overlay">
-              🔍 Натисніть для закріплення
-            </div>
-          </div>
+          <div class="wall-video-wrap"></div>
         `;
 
         const numberEl = card.querySelector<HTMLElement>('.wall-card-number')!;
