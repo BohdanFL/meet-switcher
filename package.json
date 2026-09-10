@@ -1,0 +1,16 @@
+{
+  "name": "meet-switcher",
+  "version": "1.0.0",
+  "description": "Quick 1-click & hotkey switching between student screen shares in Google Meet",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "dev": "node scripts/build.js --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.308",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0"
+  }
+}
