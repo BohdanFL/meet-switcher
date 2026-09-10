@@ -16,6 +16,10 @@ export class PinController {
     this.animationKiller = ak;
   }
 
+  public getAnimationKiller(): AnimationKiller | undefined {
+    return this.animationKiller;
+  }
+
   /**
    * Switch directly to a screen share by 1-based index (1..9).
    */
@@ -82,52 +86,70 @@ export class PinController {
       if (target.isPinned) {
         console.log(`[MeetSwitcher] "${target.participantName}" is already pinned. Unpinning...`);
         await this.unpinActiveStreams();
-        const scanDelay = this.animationKiller?.isAnimationDisabled() ? 40 : 150;
-        setTimeout(() => this.detector.scan(), scanDelay);
+        setTimeout(() => this.detector.scan(), 30);
         return true;
       }
 
-      // Step 1: Unpin any currently pinned screen
-      await this.unpinActiveStreams();
-
-      // Step 2: Allow Google Meet layout animation & reflow to settle
-      const settleDelay = this.animationKiller?.isAnimationDisabled() ? 40 : 120;
-      await this.sleep(settleDelay);
-
-      // Step 3: Ensure target tile is in view and has valid geometry
+      // 1. Ensure target tile is in view and has valid geometry
       await this.ensureTileVisible(target.tileElement);
 
-      // Step 4: Hover over the tile with real coordinates
+      // 2. Hover over the target tile
       this.hoverTile(target.tileElement);
-      await this.sleep(50);
 
-      // Step 5: Locate Pin button
+      // 3. Locate Pin button directly on target tile
       let pinBtn = this.detector.findPinButton(target.tileElement);
 
-      // Retry up to 4 times with small delays while re-hovering
       if (!pinBtn) {
-        for (let i = 0; i < 4; i++) {
-          await this.sleep(60);
+        for (let i = 0; i < 3; i++) {
+          await this.sleep(20);
           this.hoverTile(target.tileElement);
           pinBtn = this.detector.findPinButton(target.tileElement);
           if (pinBtn) break;
         }
       }
 
+      // FAST PATH: Directly pin target tile without unpinning first
       if (pinBtn) {
-        console.log(`[MeetSwitcher] Clicking Pin button on "${target.participantName}"...`);
+        console.log(`[MeetSwitcher] Direct-pinning "${target.participantName}"...`);
         this.dispatchFullClick(pinBtn);
 
-        // Step 6: Handle Google Meet host popup menu ("For myself only" vs "For everyone")
+        // Quick check for host popup menu if opened
         await this.handlePinMenuIfOpened();
 
-        // Step 7: Rescan detector state
-        setTimeout(() => this.detector.scan(), 150);
+        // Clean up previously pinned screens (if multi-pin kept them)
+        const allShares = this.detector.getScreenShares();
+        for (const share of allShares) {
+          if (share.id !== target.id && share.isPinned) {
+            this.hoverTile(share.tileElement);
+            const otherUnpin = this.detector.findUnpinButton(share.tileElement);
+            if (otherUnpin) {
+              this.dispatchFullClick(otherUnpin);
+            }
+          }
+        }
+
+        setTimeout(() => this.detector.scan(), 30);
         return true;
-      } else {
-        console.warn(`[MeetSwitcher] Pin button not found on tile for "${target.participantName}"`);
-        return false;
       }
+
+      // FALLBACK PATH: If direct pin wasn't found, unpin first and retry
+      console.log(`[MeetSwitcher] Direct pin not found, unpinning active streams and retrying...`);
+      await this.unpinActiveStreams();
+      await this.sleep(30);
+
+      await this.ensureTileVisible(target.tileElement);
+      this.hoverTile(target.tileElement);
+      pinBtn = this.detector.findPinButton(target.tileElement);
+
+      if (pinBtn) {
+        this.dispatchFullClick(pinBtn);
+        await this.handlePinMenuIfOpened();
+        setTimeout(() => this.detector.scan(), 30);
+        return true;
+      }
+
+      console.warn(`[MeetSwitcher] Pin button not found on tile for "${target.participantName}"`);
+      return false;
     } finally {
       this.isSwitching = false;
     }
@@ -231,8 +253,8 @@ export class PinController {
    * This helper checks if a menu appeared and auto-selects "For myself only".
    */
   private async handlePinMenuIfOpened(): Promise<boolean> {
-    for (let i = 0; i < 6; i++) {
-      await this.sleep(40);
+    for (let i = 0; i < 2; i++) {
+      await this.sleep(15);
 
       const menus = Array.from(
         document.querySelectorAll<HTMLElement>('div[role="menu"], ul[role="menu"], div[role="dialog"]')
