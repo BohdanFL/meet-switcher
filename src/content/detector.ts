@@ -26,6 +26,7 @@ export class ScreenDetector {
   private currentShares: ScreenShare[] = [];
   private listeners: Set<ScreenSharesListener> = new Set();
   private isScanning = false;
+  private hasInitialized = false;
 
   /**
    * Subscribe to detected screen shares updates.
@@ -131,12 +132,38 @@ export class ScreenDetector {
         }
       }
 
+      const changed = !this.hasInitialized || this.hasSharesChanged(detected);
+      this.hasInitialized = true;
       this.currentShares = detected;
-      this.notifyListeners();
+
+      if (changed) {
+        this.notifyListeners();
+      }
       return detected;
     } finally {
       this.isScanning = false;
     }
+  }
+
+  /**
+   * Determine if the detected screen shares differ from the previous state.
+   */
+  private hasSharesChanged(next: ScreenShare[]): boolean {
+    if (this.currentShares.length !== next.length) return true;
+    for (let i = 0; i < next.length; i++) {
+      const a = this.currentShares[i];
+      const b = next[i];
+      if (
+        a.id !== b.id ||
+        a.isPinned !== b.isPinned ||
+        a.index !== b.index ||
+        a.participantName !== b.participantName ||
+        a.videoElement !== b.videoElement
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

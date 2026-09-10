@@ -1,5 +1,14 @@
 import { ScreenShare } from '../../types';
 
+interface WallCardItem {
+  cardEl: HTMLElement;
+  videoEl: HTMLVideoElement;
+  share: ScreenShare;
+  numberEl: HTMLElement;
+  nameEl: HTMLElement;
+  statusEl: HTMLElement;
+}
+
 export class ClassroomWall {
   private shadow: ShadowRoot;
   private onSelectShare: (share: ScreenShare) => void;
@@ -8,7 +17,7 @@ export class ClassroomWall {
   private badgeEl!: HTMLElement;
   private isVisible = false;
   private currentShares: ScreenShare[] = [];
-  private previewVideos: HTMLVideoElement[] = [];
+  private cardsMap: Map<string, WallCardItem> = new Map();
   private onToggleDemoHandler?: () => void;
 
   constructor(shadow: ShadowRoot, onSelectShare: (share: ScreenShare) => void) {
@@ -96,12 +105,11 @@ export class ClassroomWall {
   }
 
   private render(): void {
-    this.cleanupVideos();
-
     const count = this.currentShares.length;
     this.badgeEl.textContent = `${count} ${count === 1 ? 'екран' : 'екранів'}`;
 
     if (count === 0) {
+      this.cleanupVideos();
       this.gridEl.className = 'wall-grid cols-1';
       this.gridEl.innerHTML = `
         <div class="wall-empty">
@@ -131,54 +139,105 @@ export class ClassroomWall {
       return;
     }
 
+    // Remove empty state message if present
+    const emptyEl = this.gridEl.querySelector('.wall-empty');
+    if (emptyEl) {
+      emptyEl.remove();
+    }
+
     this.gridEl.className = `wall-grid cols-${Math.min(10, count)}`;
-    this.gridEl.innerHTML = '';
 
+    const currentIds = new Set(this.currentShares.map((s) => s.id));
+
+    // 1. Remove cards for shares that are gone
+    for (const [id, item] of this.cardsMap.entries()) {
+      if (!currentIds.has(id)) {
+        try {
+          item.videoEl.pause();
+          item.videoEl.srcObject = null;
+          item.cardEl.remove();
+        } catch {
+          // Ignore detach errors
+        }
+        this.cardsMap.delete(id);
+      }
+    }
+
+    // 2. Add or update cards
     for (const share of this.currentShares) {
-      const card = document.createElement('div');
-      card.className = `wall-card ${share.isPinned ? 'pinned' : ''}`;
-      card.title = `Закріпити екран ${share.participantName} (Alt + ${share.index})`;
+      const existing = this.cardsMap.get(share.id);
+      if (existing) {
+        // Update attributes without re-creating DOM or touching the playing video!
+        existing.share = share;
+        existing.cardEl.className = `wall-card ${share.isPinned ? 'pinned' : ''}`;
+        existing.cardEl.title = `Закріпити екран ${share.participantName} (Alt + ${share.index})`;
+        existing.numberEl.textContent = `${share.index}`;
+        existing.nameEl.textContent = share.participantName;
+        existing.statusEl.textContent = share.isPinned ? '📌 В центрі' : '🖥️';
 
-      card.innerHTML = `
-        <div class="wall-card-header">
-          <div class="wall-card-title">
-            <span class="wall-card-number">${share.index}</span>
-            <span class="wall-card-name">${this.escapeHtml(share.participantName)}</span>
-          </div>
-          <div class="wall-card-status">
-            ${share.isPinned ? '📌 В центрі' : '🖥️'}
-          </div>
-        </div>
-        <div class="wall-video-wrap">
-          <div class="wall-hover-overlay">
-            🔍 Натисніть для закріплення
-          </div>
-        </div>
-      `;
+        if (
+          share.videoElement &&
+          share.videoElement.srcObject &&
+          existing.videoEl.srcObject !== share.videoElement.srcObject
+        ) {
+          existing.videoEl.srcObject = share.videoElement.srcObject;
+        }
+      } else {
+        // Create new card for this screen share
+        const card = document.createElement('div');
+        card.className = `wall-card ${share.isPinned ? 'pinned' : ''}`;
+        card.title = `Закріпити екран ${share.participantName} (Alt + ${share.index})`;
 
-      const videoWrap = card.querySelector<HTMLElement>('.wall-video-wrap')!;
-      const previewVideo = document.createElement('video');
-      previewVideo.autoplay = true;
-      previewVideo.muted = true;
-      previewVideo.playsInline = true;
+        card.innerHTML = `
+          <div class="wall-card-header">
+            <div class="wall-card-title">
+              <span class="wall-card-number">${share.index}</span>
+              <span class="wall-card-name">${this.escapeHtml(share.participantName)}</span>
+            </div>
+            <div class="wall-card-status">
+              ${share.isPinned ? '📌 В центрі' : '🖥️'}
+            </div>
+          </div>
+          <div class="wall-video-wrap">
+            <div class="wall-hover-overlay">
+              🔍 Натисніть для закріплення
+            </div>
+          </div>
+        `;
 
-      // Zero-copy stream mirroring directly from Meet's active video
-      if (share.videoElement && share.videoElement.srcObject) {
-        previewVideo.srcObject = share.videoElement.srcObject;
-        previewVideo.play().catch(() => {
-          // Playback error handling
+        const numberEl = card.querySelector<HTMLElement>('.wall-card-number')!;
+        const nameEl = card.querySelector<HTMLElement>('.wall-card-name')!;
+        const statusEl = card.querySelector<HTMLElement>('.wall-card-status')!;
+        const videoWrap = card.querySelector<HTMLElement>('.wall-video-wrap')!;
+
+        const previewVideo = document.createElement('video');
+        previewVideo.autoplay = true;
+        previewVideo.muted = true;
+        previewVideo.playsInline = true;
+
+        if (share.videoElement && share.videoElement.srcObject) {
+          previewVideo.srcObject = share.videoElement.srcObject;
+          previewVideo.play().catch(() => {});
+        }
+
+        videoWrap.appendChild(previewVideo);
+
+        card.addEventListener('click', () => {
+          this.close();
+          this.onSelectShare(share);
+        });
+
+        this.gridEl.appendChild(card);
+
+        this.cardsMap.set(share.id, {
+          cardEl: card,
+          videoEl: previewVideo,
+          share,
+          numberEl,
+          nameEl,
+          statusEl,
         });
       }
-
-      this.previewVideos.push(previewVideo);
-      videoWrap.appendChild(previewVideo);
-
-      card.addEventListener('click', () => {
-        this.close();
-        this.onSelectShare(share);
-      });
-
-      this.gridEl.appendChild(card);
     }
   }
 
@@ -186,16 +245,16 @@ export class ClassroomWall {
    * Free GPU resources and detach video streams when wall is closed.
    */
   private cleanupVideos(): void {
-    for (const video of this.previewVideos) {
+    for (const item of this.cardsMap.values()) {
       try {
-        video.pause();
-        video.srcObject = null;
-        video.remove();
+        item.videoEl.pause();
+        item.videoEl.srcObject = null;
+        item.cardEl.remove();
       } catch {
         // Ignore detach errors
       }
     }
-    this.previewVideos = [];
+    this.cardsMap.clear();
   }
 
   private escapeHtml(str: string): string {
