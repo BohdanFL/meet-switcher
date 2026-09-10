@@ -27,6 +27,7 @@ export class ScreenDetector {
   private listeners: Set<ScreenSharesListener> = new Set();
   private isScanning = false;
   private hasInitialized = false;
+  private participantSlots: Map<string, number> = new Map();
 
   /**
    * Subscribe to detected screen shares updates.
@@ -95,7 +96,16 @@ export class ScreenDetector {
 
     try {
       const videos = Array.from(document.querySelectorAll<HTMLVideoElement>('video'));
-      const detected: ScreenShare[] = [];
+      interface RawTile {
+        id: string;
+        participantName: string;
+        isPinned: boolean;
+        tileElement: HTMLElement;
+        videoElement: HTMLVideoElement;
+        pinButton: HTMLButtonElement | null;
+        unpinButton: HTMLButtonElement | null;
+      }
+      const rawList: RawTile[] = [];
       const seenTileIds = new Set<string>();
 
       for (const video of videos) {
@@ -106,7 +116,7 @@ export class ScreenDetector {
           tile.getAttribute('data-participant-id') ||
           tile.getAttribute('data-requested-participant-id') ||
           tile.getAttribute('data-tile-media-id') ||
-          `tile-${detected.length}`;
+          `tile-${rawList.length}`;
 
         // Avoid duplicate entries for the same tile
         if (seenTileIds.has(tileId)) continue;
@@ -119,10 +129,9 @@ export class ScreenDetector {
           const pinButton = this.findPinButton(tile);
           const unpinButton = this.findUnpinButton(tile);
 
-          detected.push({
+          rawList.push({
             id: tileId,
             participantName,
-            index: detected.length + 1,
             isPinned,
             tileElement: tile,
             videoElement: video,
@@ -131,6 +140,40 @@ export class ScreenDetector {
           });
         }
       }
+
+      // Clean up slots for participants that left
+      const activeIds = new Set(rawList.map((r) => r.id));
+      for (const id of this.participantSlots.keys()) {
+        if (!activeIds.has(id)) {
+          this.participantSlots.delete(id);
+        }
+      }
+
+      // Assign stable slot indices (preserving slots across re-orderings and pin actions)
+      const usedSlots = new Set(this.participantSlots.values());
+      const getNextFreeSlot = (): number => {
+        let slot = 1;
+        while (usedSlots.has(slot)) {
+          slot++;
+        }
+        usedSlots.add(slot);
+        return slot;
+      };
+
+      for (const raw of rawList) {
+        if (!this.participantSlots.has(raw.id)) {
+          this.participantSlots.set(raw.id, getNextFreeSlot());
+        }
+      }
+
+      // Build detected shares with their fixed slot index
+      const detected: ScreenShare[] = rawList.map((raw) => ({
+        ...raw,
+        index: this.participantSlots.get(raw.id)!,
+      }));
+
+      // Sort by index so list order never jumps when a participant is pinned/unpinned
+      detected.sort((a, b) => a.index - b.index);
 
       const changed = !this.hasInitialized || this.hasSharesChanged(detected);
       this.hasInitialized = true;

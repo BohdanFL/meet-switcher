@@ -239,6 +239,14 @@ export class ClassroomWall {
         });
       }
     }
+
+    // Ensure grid DOM elements strictly match sorted shares order (1..N)
+    for (const share of this.currentShares) {
+      const item = this.cardsMap.get(share.id);
+      if (item && item.cardEl.parentElement === this.gridEl) {
+        this.gridEl.appendChild(item.cardEl);
+      }
+    }
   }
 
   /**
