@@ -1,0 +1,75 @@
+- generic [ref=e2]:
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - link "Return to home screen" [ref=e144] [cursor=pointer]:
+        - /url: ""
+        - img "Meet logo" [ref=e145]
+      - button "Sign in" [ref=e146] [cursor=pointer]
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e26]:
+          - alert [ref=e147]:
+            - generic [ref=e148]: Do you want people to see and hear you in the meeting?
+            - button "Allow microphone and camera" [ref=e152]
+          - generic [ref=e56]:
+            - button "More options" [ref=e155] [cursor=pointer]:
+              - generic [aria-hidden] [ref=e59]: more_vert
+            - tooltip [aria-hidden] [ref=e61]: More options
+          - generic [ref=e62]:
+            - generic [ref=e66]:
+              - button "Microphone problem. Show more info" [ref=e156] [cursor=pointer]:
+                - generic [aria-hidden] [ref=e74]: mic
+              - tooltip [aria-hidden] [ref=e76]: Show more info
+            - generic [ref=e80]:
+              - button "Camera problem. Show more info" [ref=e157] [cursor=pointer]:
+                - generic [aria-hidden] [ref=e88]: videocam
+              - tooltip [aria-hidden] [ref=e90]: Show more info
+          - button "Backgrounds and effects" [ref=e158] [cursor=pointer]:
+            - generic [aria-hidden] [ref=e95]: visual_effects
+        - generic [ref=e30]:
+          - generic [ref=e163]:
+            - 'button "Microphone: Permission needed" [disabled] [ref=e165]':
+              - generic [aria-hidden] [ref=e169]: mic_none
+              - generic [aria-hidden] [ref=e170]: Permission needed
+            - tooltip [aria-hidden] [ref=e175]: Permission needed
+          - generic [ref=e180]:
+            - 'button "Speaker: Permission needed" [disabled] [ref=e182]':
+              - generic [aria-hidden] [ref=e191]: Permission needed
+            - tooltip [aria-hidden] [ref=e196]: Permission needed
+          - generic [ref=e201]:
+            - 'button "Camera: Permission needed" [disabled] [ref=e203]':
+              - generic [aria-hidden] [ref=e207]: videocam
+              - generic [aria-hidden] [ref=e208]: Permission needed
+            - tooltip [aria-hidden] [ref=e213]: Permission needed
+      - generic [ref=e97]:
+        - generic [ref=e98]:
+          - generic [ref=e99]: What's your name?
+          - generic [ref=e100]:
+            - textbox "Your name" [ref=e214]
+            - generic [ref=e105]:
+              - text: 0/60
+              - generic [ref=e106]: 0 of 60 characters entered
+        - generic [ref=e108]:
+          - generic [ref=e111]:
+            - generic [ref=e114]:
+              - button "Ask to join" [disabled]
+            - status
+          - generic [ref=e116]:
+            - button "Other ways to join" [disabled]:
+              - generic [aria-hidden]: Other ways to join
+              - generic:
+                - generic [aria-hidden]: expand_more
+    - contentinfo [ref=e45]:
+      - text: By joining, you agree to the
+      - link "Terms of Service" [ref=e215] [cursor=pointer]:
+        - /url: https://accounts.google.com/TOS
+      - text: and
+      - link "Privacy Policy" [ref=e216] [cursor=pointer]:
+        - /url: https://accounts.google.com/TOS?privacy=true
+      - text: . System info will be sent to confirm you're not a bot.
+  - generic [ref=e217]: Permission needed
+  - dialog "Sign in with your Google account" [ref=e219]:
+    - generic [ref=e224]:
+      - heading "Sign in with your Google account" [level=2] [ref=e226]
+      - generic [ref=e227]: Instead of waiting to be let in, sign in with the Google account your host invited
+      - button "Got it" [active] [ref=e230] [cursor=pointer]

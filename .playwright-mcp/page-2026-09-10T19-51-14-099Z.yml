@@ -1,0 +1,22 @@
+- generic [ref=e9]:
+  - generic [ref=e10]:
+    - link "Return to home screen" [ref=e13] [cursor=pointer]:
+      - /url: ""
+      - img "Meet logo" [ref=e14]
+    - button "Sign in" [ref=e17] [cursor=pointer]
+  - generic [ref=e23]:
+    - generic [ref=e27]:
+      - generic:
+        - status "Video preview is ON"
+    - generic [ref=e35]:
+      - text: Getting ready...
+      - generic [ref=e36]: You'll be able to join in just a moment
+      - progressbar "Getting ready..." [ref=e38]
+  - contentinfo [ref=e45]:
+    - text: By joining, you agree to the
+    - link "Terms of Service" [ref=e46] [cursor=pointer]:
+      - /url: https://accounts.google.com/TOS
+    - text: and
+    - link "Privacy Policy" [ref=e47] [cursor=pointer]:
+      - /url: https://accounts.google.com/TOS?privacy=true
+    - text: . System info will be sent to confirm you're not a bot.

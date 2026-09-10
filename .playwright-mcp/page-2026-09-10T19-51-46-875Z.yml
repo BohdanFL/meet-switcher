@@ -1,0 +1,65 @@
+- generic [ref=e2]:
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - link [ref=e48] [cursor=pointer]:
+        - /url: ""
+      - button [ref=e50] [cursor=pointer]:
+        - generic [ref=e19]: Sign in
+    - generic [ref=e23]:
+      - generic [ref=e26]:
+        - generic [ref=e56]:
+          - button [ref=e57] [cursor=pointer]:
+            - generic [aria-hidden] [ref=e59]: more_vert
+          - tooltip [aria-hidden] [ref=e61]: More options
+        - generic [ref=e62]:
+          - generic [ref=e66]:
+            - button [ref=e67] [cursor=pointer]:
+              - generic [aria-hidden] [ref=e74]: mic
+            - tooltip [aria-hidden] [ref=e76]: Show more info
+          - generic [ref=e80]:
+            - button [ref=e81] [cursor=pointer]:
+              - generic [aria-hidden] [ref=e88]: videocam
+            - tooltip [aria-hidden] [ref=e90]: Show more info
+        - button [ref=e92] [cursor=pointer]:
+          - generic [aria-hidden] [ref=e95]: visual_effects
+      - generic [ref=e97]:
+        - generic [ref=e98]:
+          - generic [ref=e99]: What's your name?
+          - generic [ref=e100]:
+            - textbox [active] [ref=e103]:
+              - /placeholder: Your name
+            - generic [ref=e105]:
+              - text: 0/60
+              - generic [ref=e106]: 0 of 60 characters entered
+        - generic [ref=e108]:
+          - generic [ref=e114]:
+            - button [disabled]:
+              - generic: Ask to join
+          - generic [ref=e116]:
+            - button [disabled]:
+              - generic [aria-hidden]: Other ways to join
+              - generic:
+                - generic [aria-hidden]: expand_more
+    - contentinfo [ref=e45]:
+      - text: By joining, you agree to the
+      - link [ref=e117] [cursor=pointer]:
+        - /url: https://accounts.google.com/TOS
+        - text: Terms of Service
+      - text: and
+      - link [ref=e118] [cursor=pointer]:
+        - /url: https://accounts.google.com/TOS?privacy=true
+        - text: Privacy Policy
+      - text: . System info will be sent to confirm you're not a bot.
+  - dialog "Do you want people to see and hear you in the meeting?" [ref=e120]:
+    - generic [ref=e123]:
+      - img "People using Meet." [ref=e125]
+      - generic [ref=e126]:
+        - heading "Do you want people to see and hear you in the meeting?" [level=1] [ref=e127]
+        - generic [ref=e128]: You can still turn off your microphone and camera anytime in the meeting.
+        - generic [ref=e131]:
+          - generic [ref=e132] [cursor=pointer]
+          - generic [ref=e133]:
+            - button "More options" [ref=e134] [cursor=pointer]:
+              - generic [aria-hidden] [ref=e136]: expand_more
+            - tooltip [aria-hidden] [ref=e138]: More options
+        - button "Continue without microphone and camera" [ref=e140] [cursor=pointer]
