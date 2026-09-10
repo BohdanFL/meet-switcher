@@ -83,14 +83,16 @@ export class SwitcherHud {
 
   public setDemoActive(active: boolean): void {
     this.isDemoActive = active;
-    const demoBtn = this.shadow.querySelector<HTMLButtonElement>('.demo-btn');
+    const demoBtn = this.shadow.querySelector<HTMLButtonElement>('.btn-demo-pill');
     if (demoBtn) {
-      demoBtn.style.color = active ? '#f9ab00' : '#9aa0a6';
-      demoBtn.style.background = active ? 'rgba(249, 171, 0, 0.2)' : 'transparent';
+      demoBtn.classList.toggle('active', active);
+      demoBtn.innerHTML = active ? '🧪 Демо ON' : '🧪 Демо';
       demoBtn.title = active
         ? 'Вимкнути Демо-режим (Alt + Shift + D)'
         : 'Увімкнути Демо-режим: 9 учнів (Alt + Shift + D)';
     }
+    this.renderBadge();
+    this.renderList();
   }
 
   private buildSkeleton(): void {
@@ -105,8 +107,8 @@ export class SwitcherHud {
           <span class="hud-badge">0 екранів</span>
         </div>
         <div class="hud-actions">
+          <button class="btn-demo-pill" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪 Демо</button>
           <button class="icon-btn wall-btn" title="Стіна класу / Огляд (Alt + W)">⊞</button>
-          <button class="icon-btn demo-btn" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪</button>
           <button class="icon-btn toggle-btn" title="Згорнути / Розгорнути">─</button>
         </div>
       </div>
@@ -115,6 +117,7 @@ export class SwitcherHud {
       </div>
       <div class="hud-footer">
         <span>Стіна: <kbd>Alt</kbd>+<kbd>W</kbd></span>
+        <span>Демо: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></span>
         <span>Відкріп: <kbd>Alt</kbd>+<kbd>0</kbd></span>
       </div>
     `;
@@ -132,7 +135,7 @@ export class SwitcherHud {
       }
     });
 
-    const demoBtn = this.containerEl.querySelector<HTMLButtonElement>('.demo-btn')!;
+    const demoBtn = this.containerEl.querySelector<HTMLButtonElement>('.btn-demo-pill')!;
     demoBtn.addEventListener('click', () => {
       if (this.onToggleDemoHandler) {
         this.onToggleDemoHandler();
@@ -155,7 +158,10 @@ export class SwitcherHud {
 
   private renderBadge(): void {
     const count = this.currentShares.length;
-    if (count === 0) {
+    if (this.isDemoActive) {
+      this.badgeEl.textContent = 'Демо: 9 учнів';
+      this.badgeEl.classList.add('has-screens');
+    } else if (count === 0) {
       this.badgeEl.textContent = '0 екранів';
       this.badgeEl.classList.remove('has-screens');
     } else {
@@ -175,8 +181,20 @@ export class SwitcherHud {
           </svg>
           <div>Очікування презентацій...</div>
           <div style="font-size: 11px; opacity: 0.7; margin-top: 2px;">Учні ще не поширили екран</div>
+          <button class="empty-state-demo-btn">
+            🧪 Запустити Демо-режим (9 учнів)
+          </button>
         </div>
       `;
+
+      const emptyDemo = this.listEl.querySelector<HTMLButtonElement>('.empty-state-demo-btn');
+      if (emptyDemo) {
+        emptyDemo.addEventListener('click', () => {
+          if (this.onToggleDemoHandler) {
+            this.onToggleDemoHandler();
+          }
+        });
+      }
       return;
     }
 

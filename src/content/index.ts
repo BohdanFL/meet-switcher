@@ -47,6 +47,8 @@ function initMeetSwitcher(): void {
   hud.setOnToggleWall(toggleWall);
   hud.setOnToggleDemo(toggleDemo);
 
+  wall.setOnToggleDemo(toggleDemo);
+
   hotkeys.setOnToggleWall(toggleWall);
   hotkeys.setOnCloseWall(closeWall);
   hotkeys.setOnToggleDemo(toggleDemo);

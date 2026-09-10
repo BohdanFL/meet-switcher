@@ -9,11 +9,16 @@ export class ClassroomWall {
   private isVisible = false;
   private currentShares: ScreenShare[] = [];
   private previewVideos: HTMLVideoElement[] = [];
+  private onToggleDemoHandler?: () => void;
 
   constructor(shadow: ShadowRoot, onSelectShare: (share: ScreenShare) => void) {
     this.shadow = shadow;
     this.onSelectShare = onSelectShare;
     this.buildOverlay();
+  }
+
+  public setOnToggleDemo(handler: () => void): void {
+    this.onToggleDemoHandler = handler;
   }
 
   public isOpen(): boolean {
@@ -60,6 +65,7 @@ export class ClassroomWall {
         <div class="wall-header-title">
           <span class="wall-title-text">⊞ Classroom Wall • Огляд екранів</span>
           <span class="wall-badge">0 екранів</span>
+          <button class="btn-demo-pill wall-demo-header-btn" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪 Демо</button>
         </div>
         <div class="wall-header-hint">
           Клікніть по плитці, щоб закріпити учня • Закрити: <kbd>Esc</kbd> або <kbd>Alt+W</kbd>
@@ -80,6 +86,13 @@ export class ClassroomWall {
 
     const closeBtn = this.overlayEl.querySelector<HTMLButtonElement>('.wall-close-btn')!;
     closeBtn.addEventListener('click', () => this.close());
+
+    const headerDemoBtn = this.overlayEl.querySelector<HTMLButtonElement>('.wall-demo-header-btn')!;
+    headerDemoBtn.addEventListener('click', () => {
+      if (this.onToggleDemoHandler) {
+        this.onToggleDemoHandler();
+      }
+    });
   }
 
   private render(): void {
@@ -98,11 +111,23 @@ export class ClassroomWall {
             <line x1="12" y1="17" x2="12" y2="21"></line>
           </svg>
           <div>Немає активних демонстрацій екранів</div>
-          <div style="font-size: 12px; margin-top: 6px; opacity: 0.7;">
-            Очікування, поки учні поширять свої екрани (або увімкніть [🧪 Демо])
+          <div style="font-size: 13px; margin-top: 6px; opacity: 0.7;">
+            Очікування, поки учні поширять свої екрани
           </div>
+          <button class="wall-empty-demo-btn">
+            🧪 Запустити Демо-режим (9 учнів)
+          </button>
         </div>
       `;
+
+      const emptyDemo = this.gridEl.querySelector<HTMLButtonElement>('.wall-empty-demo-btn');
+      if (emptyDemo) {
+        emptyDemo.addEventListener('click', () => {
+          if (this.onToggleDemoHandler) {
+            this.onToggleDemoHandler();
+          }
+        });
+      }
       return;
     }
 
