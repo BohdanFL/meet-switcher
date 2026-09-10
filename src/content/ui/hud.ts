@@ -61,6 +61,38 @@ export class SwitcherHud {
     }
   }
 
+  private onToggleWallHandler?: () => void;
+  private onToggleDemoHandler?: () => void;
+  private isDemoActive = false;
+
+  public getShadowRoot(): ShadowRoot {
+    return this.shadow;
+  }
+
+  public setOnToggleWall(handler: () => void): void {
+    this.onToggleWallHandler = handler;
+  }
+
+  public setOnToggleDemo(handler: () => void): void {
+    this.onToggleDemoHandler = handler;
+  }
+
+  public getIsDemoActive(): boolean {
+    return this.isDemoActive;
+  }
+
+  public setDemoActive(active: boolean): void {
+    this.isDemoActive = active;
+    const demoBtn = this.shadow.querySelector<HTMLButtonElement>('.demo-btn');
+    if (demoBtn) {
+      demoBtn.style.color = active ? '#f9ab00' : '#9aa0a6';
+      demoBtn.style.background = active ? 'rgba(249, 171, 0, 0.2)' : 'transparent';
+      demoBtn.title = active
+        ? 'Вимкнути Демо-режим (Alt + Shift + D)'
+        : 'Увімкнути Демо-режим: 9 учнів (Alt + Shift + D)';
+    }
+  }
+
   private buildSkeleton(): void {
     this.containerEl = document.createElement('div');
     this.containerEl.className = 'hud-container';
@@ -73,6 +105,8 @@ export class SwitcherHud {
           <span class="hud-badge">0 екранів</span>
         </div>
         <div class="hud-actions">
+          <button class="icon-btn wall-btn" title="Стіна класу / Огляд (Alt + W)">⊞</button>
+          <button class="icon-btn demo-btn" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪</button>
           <button class="icon-btn toggle-btn" title="Згорнути / Розгорнути">─</button>
         </div>
       </div>
@@ -80,8 +114,8 @@ export class SwitcherHud {
         <div class="screen-list-wrap"></div>
       </div>
       <div class="hud-footer">
-        <span>Відкріпити: <kbd>Alt</kbd>+<kbd>0</kbd></span>
-        <span>Перехід: <kbd>Alt</kbd>+<kbd>1..9</kbd></span>
+        <span>Стіна: <kbd>Alt</kbd>+<kbd>W</kbd></span>
+        <span>Відкріп: <kbd>Alt</kbd>+<kbd>0</kbd></span>
       </div>
     `;
 
@@ -90,6 +124,20 @@ export class SwitcherHud {
     this.badgeEl = this.containerEl.querySelector<HTMLElement>('.hud-badge')!;
     this.listEl = this.containerEl.querySelector<HTMLElement>('.screen-list-wrap')!;
     this.toggleBtn = this.containerEl.querySelector<HTMLButtonElement>('.toggle-btn')!;
+
+    const wallBtn = this.containerEl.querySelector<HTMLButtonElement>('.wall-btn')!;
+    wallBtn.addEventListener('click', () => {
+      if (this.onToggleWallHandler) {
+        this.onToggleWallHandler();
+      }
+    });
+
+    const demoBtn = this.containerEl.querySelector<HTMLButtonElement>('.demo-btn')!;
+    demoBtn.addEventListener('click', () => {
+      if (this.onToggleDemoHandler) {
+        this.onToggleDemoHandler();
+      }
+    });
 
     this.toggleBtn.addEventListener('click', () => {
       this.toggleCollapse(!this.isCollapsed);

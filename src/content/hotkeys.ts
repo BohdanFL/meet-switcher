@@ -5,9 +5,25 @@ export class HotkeyManager {
   private isListening = false;
   private keydownHandler: (e: KeyboardEvent) => void;
 
+  private onToggleWallHandler?: () => void;
+  private onCloseWallHandler?: () => void;
+  private onToggleDemoHandler?: () => void;
+
   constructor(controller: PinController) {
     this.controller = controller;
     this.keydownHandler = this.handleKeydown.bind(this);
+  }
+
+  public setOnToggleWall(handler: () => void): void {
+    this.onToggleWallHandler = handler;
+  }
+
+  public setOnCloseWall(handler: () => void): void {
+    this.onCloseWallHandler = handler;
+  }
+
+  public setOnToggleDemo(handler: () => void): void {
+    this.onToggleDemoHandler = handler;
   }
 
   public start(): void {
@@ -23,6 +39,14 @@ export class HotkeyManager {
   }
 
   private handleKeydown(e: KeyboardEvent): void {
+    // 0. Escape key closes the Classroom Wall
+    if (e.key === 'Escape' || e.code === 'Escape') {
+      if (this.onCloseWallHandler) {
+        this.onCloseWallHandler();
+      }
+      return;
+    }
+
     // 1. Ignore hotkeys when typing in form controls or rich text fields
     if (this.isInputElement(e.target as HTMLElement)) {
       return;
@@ -33,7 +57,27 @@ export class HotkeyManager {
       return;
     }
 
-    // 3. Unpin shortcut: Alt + 0 OR Alt + U
+    // 3. Demo simulation toggle: Alt + Shift + D
+    if (e.shiftKey && (e.code === 'KeyD' || e.key.toLowerCase() === 'd')) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.onToggleDemoHandler) {
+        this.onToggleDemoHandler();
+      }
+      return;
+    }
+
+    // 4. Toggle Classroom Wall: Alt + W
+    if (e.code === 'KeyW' || e.key.toLowerCase() === 'w') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.onToggleWallHandler) {
+        this.onToggleWallHandler();
+      }
+      return;
+    }
+
+    // 5. Unpin shortcut: Alt + 0 OR Alt + U
     if (e.code === 'Digit0' || e.code === 'Numpad0' || e.key === '0' || e.code === 'KeyU') {
       e.preventDefault();
       e.stopPropagation();
@@ -41,7 +85,7 @@ export class HotkeyManager {
       return;
     }
 
-    // 4. Direct number shortcuts: Alt + 1 ... Alt + 9
+    // 6. Direct number shortcuts: Alt + 1 ... Alt + 9
     const matchNumber = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
     if (matchNumber && matchNumber[1]) {
       const index = parseInt(matchNumber[1], 10);
@@ -60,7 +104,7 @@ export class HotkeyManager {
       return;
     }
 
-    // 4. Next screen: Alt + ArrowRight OR Alt + J
+    // 7. Next screen: Alt + ArrowRight OR Alt + J
     if (e.code === 'ArrowRight' || e.code === 'KeyJ') {
       e.preventDefault();
       e.stopPropagation();
@@ -68,7 +112,7 @@ export class HotkeyManager {
       return;
     }
 
-    // 5. Previous screen: Alt + ArrowLeft OR Alt + K
+    // 8. Previous screen: Alt + ArrowLeft OR Alt + K
     if (e.code === 'ArrowLeft' || e.code === 'KeyK') {
       e.preventDefault();
       e.stopPropagation();
