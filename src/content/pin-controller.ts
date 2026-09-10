@@ -63,18 +63,22 @@ export class PinController {
       // Step 1: Unpin currently pinned screen (if any)
       await this.unpinActiveStreams();
 
-      // Step 2: Allow Google Meet layout animation to settle
-      await this.sleep(60);
+      // Step 2: Allow Google Meet layout animation & reflow to settle (prevents scale(Infinity) on 0px tiles)
+      await this.sleep(120);
 
-      // Step 3: Trigger mouseover/focus to reveal target buttons
+      // Step 3: Ensure target tile is rendered and has valid dimensions
+      await this.ensureTileVisible(target.tileElement);
+
+      // Step 4: Hover over the tile to make Meet render action buttons
       this.hoverTile(target.tileElement);
+      await this.sleep(40);
 
-      // Step 4: Locate Pin button and click it
+      // Step 5: Locate Pin button and click it
       let pinBtn = this.detector.findPinButton(target.tileElement);
 
-      // Retry up to 3 times with brief delays if Meet hasn't rendered buttons yet
+      // Retry if Meet hasn't rendered buttons yet
       if (!pinBtn) {
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
           await this.sleep(50);
           this.hoverTile(target.tileElement);
           pinBtn = this.detector.findPinButton(target.tileElement);
@@ -84,8 +88,12 @@ export class PinController {
 
       if (pinBtn) {
         pinBtn.click();
-        // Trigger a rescanned state update
-        setTimeout(() => this.detector.scan(), 100);
+
+        // Step 6: Handle Google Meet host popup menu ("For myself only" vs "For everyone")
+        await this.handlePinMenuIfOpened();
+
+        // Step 7: Rescan detector state
+        setTimeout(() => this.detector.scan(), 150);
         return true;
       } else {
         console.warn(`[MeetSwitcher] Pin button not found on tile for "${target.participantName}"`);
@@ -102,33 +110,106 @@ export class PinController {
   public async unpinActiveStreams(): Promise<void> {
     // 1. Check known shares from detector
     const shares = this.detector.getScreenShares();
+    let unpinned = false;
+
     for (const share of shares) {
       if (share.isPinned) {
         this.hoverTile(share.tileElement);
         const unpinBtn = this.detector.findUnpinButton(share.tileElement);
         if (unpinBtn) {
           unpinBtn.click();
+          unpinned = true;
         }
       }
     }
 
-    // 2. Global fallback check for any Unpin button in document
-    const globalButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
-    for (const btn of globalButtons) {
-      const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-      const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
-      const text = btn.textContent || '';
+    // 2. Global fallback check only if no share was explicitly unpinned
+    if (!unpinned) {
+      const globalButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
+      for (const btn of globalButtons) {
+        const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+        const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
 
-      if (
-        label.includes('unpin') ||
-        label.includes('відкріпити') ||
-        tooltip.includes('unpin') ||
-        tooltip.includes('відкріпити') ||
-        text.includes('keep_off')
-      ) {
-        btn.click();
+        if (
+          label.includes('unpin') ||
+          label.includes('відкріпити') ||
+          label.includes('открепить') ||
+          tooltip.includes('unpin') ||
+          tooltip.includes('відкріпити')
+        ) {
+          btn.click();
+        }
       }
     }
+  }
+
+  /**
+   * Ensure tile has non-zero dimensions to prevent Google Meet transform animations from crashing.
+   */
+  private async ensureTileVisible(tile: HTMLElement): Promise<boolean> {
+    try {
+      tile.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    } catch {
+      // Ignore scroll errors
+    }
+
+    for (let i = 0; i < 5; i++) {
+      const rect = tile.getBoundingClientRect();
+      if (rect.width > 10 && rect.height > 10) {
+        return true;
+      }
+      await this.sleep(40);
+    }
+    return false;
+  }
+
+  /**
+   * Google Meet for hosts/moderators opens a menu: "For myself only" vs "For everyone".
+   * This helper checks if a menu appeared and auto-selects "For myself only".
+   */
+  private async handlePinMenuIfOpened(): Promise<boolean> {
+    // Wait briefly for menu to mount in DOM
+    for (let i = 0; i < 6; i++) {
+      await this.sleep(40);
+
+      const menus = Array.from(
+        document.querySelectorAll<HTMLElement>('div[role="menu"], ul[role="menu"], div[role="dialog"]')
+      );
+
+      for (const menu of menus) {
+        // Skip hidden menus
+        if (menu.offsetWidth === 0 && menu.offsetHeight === 0) continue;
+
+        const items = Array.from(
+          menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="option"], button, li')
+        );
+
+        // First pass: look specifically for "myself" / "для себе" / "для себя"
+        for (const item of items) {
+          const text = (item.textContent || '').toLowerCase();
+          const aria = (item.getAttribute('aria-label') || '').toLowerCase();
+
+          if (
+            text.includes('myself') ||
+            text.includes('для себе') ||
+            text.includes('для себя') ||
+            aria.includes('myself') ||
+            aria.includes('для себе') ||
+            aria.includes('для себя')
+          ) {
+            item.click();
+            return true;
+          }
+        }
+
+        // Second pass: if specific wording wasn't matched but a pin menu opened, click the 1st option
+        if (items.length > 0) {
+          items[0].click();
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /**

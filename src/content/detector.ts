@@ -268,11 +268,24 @@ export class ScreenDetector {
       const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
       const text = btn.textContent || '';
 
-      if (
-        ((label.startsWith('pin') || label.startsWith('закріпити')) && !label.includes('unpin') && !label.includes('відкріпити')) ||
-        ((tooltip.startsWith('pin') || tooltip.startsWith('закріпити')) && !tooltip.includes('unpin')) ||
-        text.includes('keep_outline')
-      ) {
+      const isUnpin =
+        label.includes('unpin') ||
+        label.includes('відкріп') ||
+        label.includes('откреп') ||
+        tooltip.includes('unpin') ||
+        tooltip.includes('відкріп') ||
+        text.includes('keep_off');
+
+      if (isUnpin) continue;
+
+      const isPin =
+        label.includes('pin') ||
+        label.includes('закріп') ||
+        tooltip.includes('pin') ||
+        tooltip.includes('закріп') ||
+        text.includes('keep_outline');
+
+      if (isPin) {
         return btn;
       }
     }
