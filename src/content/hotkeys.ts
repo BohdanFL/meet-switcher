@@ -33,7 +33,15 @@ export class HotkeyManager {
       return;
     }
 
-    // 3. Direct number shortcuts: Alt + 1 ... Alt + 9
+    // 3. Unpin shortcut: Alt + 0 OR Alt + U
+    if (e.code === 'Digit0' || e.code === 'Numpad0' || e.key === '0' || e.code === 'KeyU') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.controller.unpin();
+      return;
+    }
+
+    // 4. Direct number shortcuts: Alt + 1 ... Alt + 9
     const matchNumber = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
     if (matchNumber && matchNumber[1]) {
       const index = parseInt(matchNumber[1], 10);

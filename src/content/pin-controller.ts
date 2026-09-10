@@ -48,38 +48,57 @@ export class PinController {
   }
 
   /**
-   * Core switching logic: Unpin current active tile and pin target tile.
+   * Explicitly unpin any currently pinned stream (returns Meet to standard grid).
+   */
+  public async unpin(): Promise<boolean> {
+    if (this.isSwitching) return false;
+    this.isSwitching = true;
+
+    try {
+      await this.unpinActiveStreams();
+      setTimeout(() => this.detector.scan(), 150);
+      return true;
+    } finally {
+      this.isSwitching = false;
+    }
+  }
+
+  /**
+   * Core switching logic: If already pinned -> Unpin (toggle). Otherwise unpin others and pin target.
    */
   public async switchToShare(target: ScreenShare): Promise<boolean> {
     if (this.isSwitching) return false;
     this.isSwitching = true;
 
     try {
-      // If target is already pinned, nothing to do
+      // Toggle behavior: If this exact share is ALREADY pinned, unpin it!
       if (target.isPinned) {
+        console.log(`[MeetSwitcher] "${target.participantName}" is already pinned. Unpinning...`);
+        await this.unpinActiveStreams();
+        setTimeout(() => this.detector.scan(), 150);
         return true;
       }
 
-      // Step 1: Unpin currently pinned screen (if any)
+      // Step 1: Unpin any currently pinned screen
       await this.unpinActiveStreams();
 
-      // Step 2: Allow Google Meet layout animation & reflow to settle (prevents scale(Infinity) on 0px tiles)
+      // Step 2: Allow Google Meet layout animation & reflow to settle
       await this.sleep(120);
 
-      // Step 3: Ensure target tile is rendered and has valid dimensions
+      // Step 3: Ensure target tile is in view and has valid geometry
       await this.ensureTileVisible(target.tileElement);
 
-      // Step 4: Hover over the tile to make Meet render action buttons
+      // Step 4: Hover over the tile with real coordinates
       this.hoverTile(target.tileElement);
-      await this.sleep(40);
+      await this.sleep(50);
 
-      // Step 5: Locate Pin button and click it
+      // Step 5: Locate Pin button
       let pinBtn = this.detector.findPinButton(target.tileElement);
 
-      // Retry if Meet hasn't rendered buttons yet
+      // Retry up to 4 times with small delays while re-hovering
       if (!pinBtn) {
         for (let i = 0; i < 4; i++) {
-          await this.sleep(50);
+          await this.sleep(60);
           this.hoverTile(target.tileElement);
           pinBtn = this.detector.findPinButton(target.tileElement);
           if (pinBtn) break;
@@ -87,7 +106,8 @@ export class PinController {
       }
 
       if (pinBtn) {
-        pinBtn.click();
+        console.log(`[MeetSwitcher] Clicking Pin button on "${target.participantName}"...`);
+        this.dispatchFullClick(pinBtn);
 
         // Step 6: Handle Google Meet host popup menu ("For myself only" vs "For everyone")
         await this.handlePinMenuIfOpened();
@@ -108,43 +128,77 @@ export class PinController {
    * Unpin any currently pinned tiles in the meeting.
    */
   public async unpinActiveStreams(): Promise<void> {
-    // 1. Check known shares from detector
     const shares = this.detector.getScreenShares();
     let unpinned = false;
 
+    // 1. Try unpinning known shares from detector
     for (const share of shares) {
       if (share.isPinned) {
         this.hoverTile(share.tileElement);
         const unpinBtn = this.detector.findUnpinButton(share.tileElement);
         if (unpinBtn) {
-          unpinBtn.click();
+          this.dispatchFullClick(unpinBtn);
           unpinned = true;
         }
       }
     }
 
-    // 2. Global fallback check only if no share was explicitly unpinned
+    // 2. Fallback: Search globally for any active unpin button on the main stage
     if (!unpinned) {
       const globalButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
       for (const btn of globalButtons) {
         const label = (btn.getAttribute('aria-label') || '').toLowerCase();
         const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
+        const text = btn.textContent || '';
 
         if (
           label.includes('unpin') ||
           label.includes('відкріпити') ||
           label.includes('открепить') ||
           tooltip.includes('unpin') ||
-          tooltip.includes('відкріпити')
+          tooltip.includes('відкріпити') ||
+          text.includes('keep_off')
         ) {
-          btn.click();
+          this.dispatchFullClick(btn);
+          break;
         }
       }
     }
   }
 
   /**
-   * Ensure tile has non-zero dimensions to prevent Google Meet transform animations from crashing.
+   * Dispatches realistic Pointer & Mouse events with real center coordinates.
+   * Google Meet's internal JSAction requires real event sequences to execute clicks.
+   */
+  private dispatchFullClick(element: HTMLElement): void {
+    try {
+      element.focus();
+    } catch {
+      // Ignore focus errors
+    }
+
+    const rect = element.getBoundingClientRect();
+    const clientX = rect.left + rect.width / 2;
+    const clientY = rect.top + rect.height / 2;
+
+    const eventInit: MouseEventInit = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: clientX || 100,
+      clientY: clientY || 100,
+      button: 0,
+    };
+
+    element.dispatchEvent(new PointerEvent('pointerdown', eventInit));
+    element.dispatchEvent(new MouseEvent('mousedown', eventInit));
+    element.dispatchEvent(new PointerEvent('pointerup', eventInit));
+    element.dispatchEvent(new MouseEvent('mouseup', eventInit));
+    element.dispatchEvent(new MouseEvent('click', eventInit));
+  }
+
+  /**
+   * Ensure tile has non-zero dimensions before interacting.
    */
   private async ensureTileVisible(tile: HTMLElement): Promise<boolean> {
     try {
@@ -168,7 +222,6 @@ export class PinController {
    * This helper checks if a menu appeared and auto-selects "For myself only".
    */
   private async handlePinMenuIfOpened(): Promise<boolean> {
-    // Wait briefly for menu to mount in DOM
     for (let i = 0; i < 6; i++) {
       await this.sleep(40);
 
@@ -177,7 +230,6 @@ export class PinController {
       );
 
       for (const menu of menus) {
-        // Skip hidden menus
         if (menu.offsetWidth === 0 && menu.offsetHeight === 0) continue;
 
         const items = Array.from(
@@ -197,14 +249,14 @@ export class PinController {
             aria.includes('для себе') ||
             aria.includes('для себя')
           ) {
-            item.click();
+            this.dispatchFullClick(item);
             return true;
           }
         }
 
-        // Second pass: if specific wording wasn't matched but a pin menu opened, click the 1st option
+        // Second pass: click the 1st option if menu appeared
         if (items.length > 0) {
-          items[0].click();
+          this.dispatchFullClick(items[0]);
           return true;
         }
       }
@@ -213,18 +265,24 @@ export class PinController {
   }
 
   /**
-   * Hover over a tile element to make Meet render hovering overlay action buttons.
+   * Hover over a tile element with real coordinates to trigger Meet's action buttons.
    */
   private hoverTile(element: HTMLElement): void {
+    const rect = element.getBoundingClientRect();
+    const clientX = rect.left + rect.width / 2;
+    const clientY = rect.top + rect.height / 2;
+
+    const eventInit: MouseEventInit = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: clientX || 100,
+      clientY: clientY || 100,
+    };
+
     const mouseEvents = ['mouseenter', 'mouseover', 'mousemove'];
     for (const type of mouseEvents) {
-      element.dispatchEvent(
-        new MouseEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          view: window,
-        })
-      );
+      element.dispatchEvent(new MouseEvent(type, eventInit));
     }
   }
 

@@ -80,8 +80,8 @@ export class SwitcherHud {
         <div class="screen-list-wrap"></div>
       </div>
       <div class="hud-footer">
+        <span>Відкріпити: <kbd>Alt</kbd>+<kbd>0</kbd></span>
         <span>Перехід: <kbd>Alt</kbd>+<kbd>1..9</kbd></span>
-        <span>Коло: <kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd></span>
       </div>
     `;
 
@@ -132,13 +132,39 @@ export class SwitcherHud {
       return;
     }
 
+    const hasPinned = this.currentShares.some((s) => s.isPinned);
+
+    // Dynamic unpin button in header
+    let unpinHeaderBtn = this.shadow.querySelector<HTMLButtonElement>('.unpin-header-btn');
+    if (hasPinned) {
+      if (!unpinHeaderBtn) {
+        unpinHeaderBtn = document.createElement('button');
+        unpinHeaderBtn.className = 'icon-btn unpin-header-btn';
+        unpinHeaderBtn.title = 'Відкріпити активний екран (Alt + 0)';
+        unpinHeaderBtn.style.color = '#f28b82';
+        unpinHeaderBtn.innerHTML = '✕';
+        unpinHeaderBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.controller.unpin();
+        });
+        const actionsEl = this.shadow.querySelector('.hud-actions');
+        if (actionsEl) {
+          actionsEl.insertBefore(unpinHeaderBtn, actionsEl.firstChild);
+        }
+      }
+    } else if (unpinHeaderBtn) {
+      unpinHeaderBtn.remove();
+    }
+
     const ul = document.createElement('ul');
     ul.className = 'screen-list';
 
     for (const share of this.currentShares) {
       const li = document.createElement('li');
       li.className = `screen-item ${share.isPinned ? 'pinned' : ''}`;
-      li.title = `Закріпити екран: ${share.participantName} (Alt + ${share.index})`;
+      li.title = share.isPinned
+        ? `Активний. Натисніть, щоб ВІДКРІПИТИ (Alt + 0)`
+        : `Закріпити екран: ${share.participantName} (Alt + ${share.index})`;
 
       li.innerHTML = `
         <div class="screen-info">
