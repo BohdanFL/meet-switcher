@@ -116,9 +116,9 @@ export class SwitcherHud {
         <div class="screen-list-wrap"></div>
       </div>
       <div class="hud-footer">
-        <span>Стіна: <kbd>Alt</kbd>+<kbd>W</kbd></span>
-        <span>Демо: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></span>
-        <span>Відкріп: <kbd>Alt</kbd>+<kbd>0</kbd></span>
+        <span><kbd>Alt+W</kbd> Стіна</span>
+        <span><kbd>Alt+Shift+D</kbd> Демо</span>
+        <span><kbd>Alt+0</kbd> Відкріп</span>
       </div>
     `;
 

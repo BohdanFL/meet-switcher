@@ -53,7 +53,7 @@ export class DraggableHud {
   private onMouseDown(e: MouseEvent): void {
     // Only drag with left click and avoid clicking header buttons
     if (e.button !== 0) return;
-    if ((e.target as HTMLElement).closest('.icon-btn')) return;
+    if ((e.target as HTMLElement).closest('.icon-btn, .btn-demo-pill, button')) return;
 
     this.isDragging = true;
     this.startX = e.clientX;
@@ -91,7 +91,7 @@ export class DraggableHud {
   }
 
   private clampPosition(): void {
-    const hostWidth = this.host.offsetWidth || 270;
+    const hostWidth = this.host.offsetWidth || 340;
     const hostHeight = this.host.offsetHeight || 100;
 
     const maxX = Math.max(0, window.innerWidth - hostWidth - 10);
