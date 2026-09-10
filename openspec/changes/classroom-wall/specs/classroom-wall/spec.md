@@ -1,6 +1,6 @@
 ## Purpose
 
-Provides a multi-screen live overview grid (Classroom Wall) displaying up to 10 active student screens simultaneously with 1-click drill-down focus.
+Provides a multi-screen live overview grid (Classroom Wall) displaying up to 10 active student screens simultaneously with 1-click drill-down focus and built-in simulation demo mode.
 
 ## ADDED Requirements
 
@@ -43,3 +43,10 @@ The extension SHALL support toggling the Classroom Wall via keyboard shortcut `A
 #### Scenario: Closing with Escape
 - **WHEN** the Classroom Wall is open and the user presses `Escape` or clicks the close button
 - **THEN** the Classroom Wall closes and returns to the previous Meet view
+
+### Requirement: Built-in Demo mode for testing
+The extension SHALL provide a built-in simulation mode that generates synthetic student screen shares with live animated canvas streams to test switching and grid rendering without real students.
+
+#### Scenario: Toggling demo mode
+- **WHEN** the user presses `Alt + Shift + D` or clicks the Demo button in the HUD
+- **THEN** the extension injects or removes 9 simulated student screen shares with active live streams

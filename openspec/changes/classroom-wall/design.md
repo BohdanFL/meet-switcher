@@ -39,6 +39,11 @@ See proposal.md for motivation. The extension already detects active screen shar
 * **Choice**: On closing, iterate through preview videos, call `.pause()`, and set `srcObject = null`.
 * **Rationale**: Completely frees GPU render pipelines when the teacher is in single-screen focus mode.
 
+### Decision 5: Built-in Synthetic Canvas Mock Engine
+* **Choice**: A lightweight simulation module (`mock-generator.ts`) generating 9 off-screen `<canvas>` streams with animated code editors and timestamps via `canvas.captureStream()`.
+* **Rationale**: Allows teachers and developers to test the Classroom Wall, switching logic, and hotkeys immediately in an empty meeting with zero setup.
+* **Alternatives Considered**: Requiring test accounts in incognito (tedious and hard to scale to 9 screens).
+
 ## Risks / Trade-offs
 
 * **[Risk] High GPU utilization if 10 1080p streams run concurrently**:
