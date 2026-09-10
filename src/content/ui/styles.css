@@ -17,7 +17,7 @@
 }
 
 .hud-container {
-  width: 345px;
+  width: 355px;
   background: rgba(32, 33, 36, 0.95);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -149,6 +149,21 @@
 
 .icon-btn:hover {
   background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.speed-btn {
+  font-size: 13px;
+  color: #9aa0a6;
+}
+
+.speed-btn.active {
+  color: #fdd663;
+  background: rgba(249, 171, 0, 0.2);
+}
+
+.speed-btn.active:hover {
+  background: rgba(249, 171, 0, 0.35);
   color: #ffffff;
 }
 

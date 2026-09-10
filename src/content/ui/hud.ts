@@ -63,7 +63,9 @@ export class SwitcherHud {
 
   private onToggleWallHandler?: () => void;
   private onToggleDemoHandler?: () => void;
+  private onToggleTurboHandler?: () => void;
   private isDemoActive = false;
+  private isTurboActive = true;
 
   public getShadowRoot(): ShadowRoot {
     return this.shadow;
@@ -77,8 +79,16 @@ export class SwitcherHud {
     this.onToggleDemoHandler = handler;
   }
 
+  public setOnToggleTurbo(handler: () => void): void {
+    this.onToggleTurboHandler = handler;
+  }
+
   public getIsDemoActive(): boolean {
     return this.isDemoActive;
+  }
+
+  public getIsTurboActive(): boolean {
+    return this.isTurboActive;
   }
 
   public setDemoActive(active: boolean): void {
@@ -95,6 +105,17 @@ export class SwitcherHud {
     this.renderList();
   }
 
+  public setTurboActive(active: boolean): void {
+    this.isTurboActive = active;
+    const speedBtn = this.shadow.querySelector<HTMLButtonElement>('.speed-btn');
+    if (speedBtn) {
+      speedBtn.classList.toggle('active', active);
+      speedBtn.title = active
+        ? 'Турбо-режим активний: анімації Google Meet вимкнено (Alt + A)'
+        : 'Увімкнути Турбо-режим: прибрати анімації Google Meet (Alt + A)';
+    }
+  }
+
   private buildSkeleton(): void {
     this.containerEl = document.createElement('div');
     this.containerEl.className = 'hud-container';
@@ -107,6 +128,7 @@ export class SwitcherHud {
           <span class="hud-badge">0 екранів</span>
         </div>
         <div class="hud-actions">
+          <button class="icon-btn speed-btn active" title="Турбо-режим активний: анімації Google Meet вимкнено (Alt + A)">⚡</button>
           <button class="btn-demo-pill" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪 Демо</button>
           <button class="icon-btn wall-btn" title="Стіна класу / Огляд (Alt + W)">⊞</button>
           <button class="icon-btn toggle-btn" title="Згорнути / Розгорнути">─</button>
@@ -127,6 +149,13 @@ export class SwitcherHud {
     this.badgeEl = this.containerEl.querySelector<HTMLElement>('.hud-badge')!;
     this.listEl = this.containerEl.querySelector<HTMLElement>('.screen-list-wrap')!;
     this.toggleBtn = this.containerEl.querySelector<HTMLButtonElement>('.toggle-btn')!;
+
+    const speedBtn = this.containerEl.querySelector<HTMLButtonElement>('.speed-btn')!;
+    speedBtn.addEventListener('click', () => {
+      if (this.onToggleTurboHandler) {
+        this.onToggleTurboHandler();
+      }
+    });
 
     const wallBtn = this.containerEl.querySelector<HTMLButtonElement>('.wall-btn')!;
     wallBtn.addEventListener('click', () => {

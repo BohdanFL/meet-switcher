@@ -8,6 +8,7 @@ export class HotkeyManager {
   private onToggleWallHandler?: () => void;
   private onCloseWallHandler?: () => void;
   private onToggleDemoHandler?: () => void;
+  private onToggleTurboHandler?: () => void;
 
   constructor(controller: PinController) {
     this.controller = controller;
@@ -24,6 +25,10 @@ export class HotkeyManager {
 
   public setOnToggleDemo(handler: () => void): void {
     this.onToggleDemoHandler = handler;
+  }
+
+  public setOnToggleTurbo(handler: () => void): void {
+    this.onToggleTurboHandler = handler;
   }
 
   public start(): void {
@@ -77,7 +82,17 @@ export class HotkeyManager {
       return;
     }
 
-    // 5. Unpin shortcut: Alt + 0 OR Alt + U
+    // 5. Toggle Turbo Mode (Meet Animations Off): Alt + A
+    if (e.code === 'KeyA' || e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.onToggleTurboHandler) {
+        this.onToggleTurboHandler();
+      }
+      return;
+    }
+
+    // 6. Unpin shortcut: Alt + 0 OR Alt + U
     if (e.code === 'Digit0' || e.code === 'Numpad0' || e.key === '0' || e.code === 'KeyU') {
       e.preventDefault();
       e.stopPropagation();

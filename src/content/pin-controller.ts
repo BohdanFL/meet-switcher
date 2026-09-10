@@ -1,12 +1,19 @@
 import { ScreenShare } from '../types';
 import { ScreenDetector } from './detector';
+import { AnimationKiller } from './animation-killer';
 
 export class PinController {
   private detector: ScreenDetector;
   private isSwitching = false;
+  private animationKiller?: AnimationKiller;
 
-  constructor(detector: ScreenDetector) {
+  constructor(detector: ScreenDetector, animationKiller?: AnimationKiller) {
     this.detector = detector;
+    this.animationKiller = animationKiller;
+  }
+
+  public setAnimationKiller(ak: AnimationKiller): void {
+    this.animationKiller = ak;
   }
 
   /**
@@ -75,7 +82,8 @@ export class PinController {
       if (target.isPinned) {
         console.log(`[MeetSwitcher] "${target.participantName}" is already pinned. Unpinning...`);
         await this.unpinActiveStreams();
-        setTimeout(() => this.detector.scan(), 150);
+        const scanDelay = this.animationKiller?.isAnimationDisabled() ? 40 : 150;
+        setTimeout(() => this.detector.scan(), scanDelay);
         return true;
       }
 
@@ -83,7 +91,8 @@ export class PinController {
       await this.unpinActiveStreams();
 
       // Step 2: Allow Google Meet layout animation & reflow to settle
-      await this.sleep(120);
+      const settleDelay = this.animationKiller?.isAnimationDisabled() ? 40 : 120;
+      await this.sleep(settleDelay);
 
       // Step 3: Ensure target tile is in view and has valid geometry
       await this.ensureTileVisible(target.tileElement);

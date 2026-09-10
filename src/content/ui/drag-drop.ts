@@ -91,7 +91,7 @@ export class DraggableHud {
   }
 
   private clampPosition(): void {
-    const hostWidth = this.host.offsetWidth || 340;
+    const hostWidth = this.host.offsetWidth || 355;
     const hostHeight = this.host.offsetHeight || 100;
 
     const maxX = Math.max(0, window.innerWidth - hostWidth - 10);
