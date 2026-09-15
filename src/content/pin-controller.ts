@@ -34,6 +34,9 @@ export class PinController {
     const target = shares.find((s) => s.index === index);
     if (!target) {
       console.warn(`[MeetSwitcher] No screen share found with index ${index}`);
+      this.logger.log('WARN', `Attempted switch to slot [${index}], but no participant found in this slot`, {
+        availableSlots: shares.map((s) => ({ index: s.index, name: s.participantName })),
+      });
       return false;
     }
     return this.switchToShare(target);
@@ -68,7 +71,10 @@ export class PinController {
    * Explicitly unpin any currently pinned stream (returns Meet to standard grid).
    */
   public async unpin(): Promise<boolean> {
-    if (this.isSwitching) return false;
+    if (this.isSwitching) {
+      this.logger.log('WARN', 'Unpin request ignored: another switch operation is already active');
+      return false;
+    }
     this.isSwitching = true;
 
     try {
@@ -86,8 +92,12 @@ export class PinController {
    * Resilient to Google Meet's 3-tile sidebar overflow by unpinning to expand the full grid when needed.
    */
   public async switchToShare(target: ScreenShare): Promise<boolean> {
-    if (this.isSwitching) return false;
+    if (this.isSwitching) {
+      this.logger.log('WARN', `Switch to [${target.index}] "${target.participantName}" ignored: another switch operation is already active`);
+      return false;
+    }
     this.isSwitching = true;
+    const switchStartTime = Date.now();
 
     try {
       // Toggle behavior: If this exact share is ALREADY pinned, unpin it!
@@ -125,6 +135,7 @@ export class PinController {
         // Google Meet needs 200-400ms to reflow and mount all tiles into the DOM.
         // Poll with retries for up to 800ms (16 attempts * 50ms)
         const targetNorm = this.detector.normalizeParticipantName(target.participantName);
+        let locatedAttempt = -1;
         for (let attempt = 0; attempt < 16; attempt++) {
           await this.sleep(50);
           const fresh = this.detector.scan();
@@ -137,8 +148,16 @@ export class PinController {
             currentTile = refreshed.tileElement;
             target = refreshed;
             isInDom = true;
+            locatedAttempt = attempt + 1;
             break;
           }
+        }
+
+        if (isInDom) {
+          this.logger.log('ACTION', `Off-screen tile located after ${locatedAttempt * 50}ms grid expansion`, {
+            participantName: target.participantName,
+            attempt: locatedAttempt,
+          });
         }
       }
 
@@ -179,7 +198,9 @@ export class PinController {
 
         // Crucial: check host popup menu ("For myself only" vs "For everyone")
         await this.handlePinMenuIfOpened();
+        const elapsedMs = Date.now() - switchStartTime;
         this.logger.recordSwitch(target.participantName, target.index, true);
+        this.logger.log('ACTION', `Successfully switched to [${target.index}] "${target.participantName}" in ${elapsedMs}ms`);
 
         // Clean up any previously pinned screens (if multi-pin kept them)
         const allShares = this.detector.getScreenShares();
@@ -231,7 +252,9 @@ export class PinController {
           this.logger.log('ACTION', `Dispatched retry Pin click on tile for "${target.participantName}"`);
           this.dispatchFullClick(pinBtn);
           await this.handlePinMenuIfOpened();
+          const elapsedMs = Date.now() - switchStartTime;
           this.logger.recordSwitch(target.participantName, target.index, true);
+          this.logger.log('ACTION', `Successfully switched to [${target.index}] "${target.participantName}" via fallback path in ${elapsedMs}ms`);
           setTimeout(() => this.detector.scan(), 50);
           return true;
         }

@@ -409,6 +409,10 @@ export class ScreenDetector {
         this.notifyListeners();
       }
       return detected;
+    } catch (err) {
+      this.logger.log('ERROR', 'Unexpected error during DOM scan', { error: String(err) });
+      console.error('[MeetSwitcher] Unexpected error during DOM scan:', err);
+      return this.currentShares;
     } finally {
       this.isScanning = false;
     }
