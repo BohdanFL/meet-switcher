@@ -43,3 +43,6 @@ export interface HudState {
  * Callback function when active screen shares change.
  */
 export type ScreenSharesListener = (shares: ScreenShare[]) => void;
+
+export * from './alias';
+
