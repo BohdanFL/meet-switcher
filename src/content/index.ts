@@ -100,6 +100,32 @@ function initMeetSwitcher(): void {
     }
   });
 
+  // Load and apply Demo visibility setting
+  try {
+    chrome.storage?.local?.get('meet_switcher_show_demo', (res) => {
+      const showDemo = Boolean(res?.meet_switcher_show_demo);
+      hud.setShowDemo(showDemo);
+      wall.setShowDemo(showDemo);
+      hotkeys.setDemoEnabled(showDemo);
+    });
+  } catch (err) {
+    console.warn('[MeetSwitcher] Failed to read demo setting:', err);
+  }
+
+  // React to settings changes in real time
+  try {
+    chrome.storage?.onChanged?.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes['meet_switcher_show_demo']) {
+        const showDemo = Boolean(changes['meet_switcher_show_demo'].newValue);
+        hud.setShowDemo(showDemo);
+        wall.setShowDemo(showDemo);
+        hotkeys.setDemoEnabled(showDemo);
+      }
+    });
+  } catch (err) {
+    console.warn('[MeetSwitcher] Failed to attach storage listener:', err);
+  }
+
   // Start background monitoring & keyboard shortcuts
   detector.start();
   hotkeys.start();

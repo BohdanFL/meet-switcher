@@ -65,7 +65,26 @@ export class SwitcherHud {
   private onToggleDemoHandler?: () => void;
   private onToggleTurboHandler?: () => void;
   private isDemoActive = false;
+  private isDemoVisible = false;
   private isTurboActive = true;
+
+  public setShowDemo(visible: boolean): void {
+    this.isDemoVisible = visible;
+    const demoBtn = this.shadow.querySelector<HTMLButtonElement>('.btn-demo-pill');
+    if (demoBtn) {
+      demoBtn.style.display = visible ? 'inline-flex' : 'none';
+    }
+
+    const demoFooterHint = this.shadow.querySelector<HTMLElement>('.hud-footer-demo-hint');
+    if (demoFooterHint) {
+      demoFooterHint.style.display = visible ? 'inline' : 'none';
+    }
+
+    const emptyDemoBtn = this.shadow.querySelector<HTMLElement>('.empty-state-demo-btn');
+    if (emptyDemoBtn) {
+      emptyDemoBtn.style.display = visible ? 'inline-block' : 'none';
+    }
+  }
 
   public getShadowRoot(): ShadowRoot {
     return this.shadow;
@@ -129,7 +148,7 @@ export class SwitcherHud {
         </div>
         <div class="hud-actions">
           <button class="icon-btn speed-btn active" title="Турбо-режим активний: анімації Google Meet вимкнено (Alt + A)">⚡</button>
-          <button class="btn-demo-pill" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪 Демо</button>
+          <button class="btn-demo-pill" style="display: none;" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪 Демо</button>
           <button class="icon-btn wall-btn" title="Стіна класу / Огляд (Alt + W)">⊞</button>
           <button class="icon-btn toggle-btn" title="Згорнути / Розгорнути">─</button>
         </div>
@@ -139,7 +158,7 @@ export class SwitcherHud {
       </div>
       <div class="hud-footer">
         <span><kbd>Alt+W</kbd> Стіна</span>
-        <span><kbd>Alt+Shift+D</kbd> Демо</span>
+        <span class="hud-footer-demo-hint" style="display: none;"><kbd>Alt+Shift+D</kbd> Демо</span>
         <span><kbd>Alt+0</kbd> Відкріп</span>
       </div>
     `;
@@ -210,7 +229,7 @@ export class SwitcherHud {
           </svg>
           <div>Очікування презентацій...</div>
           <div style="font-size: 11px; opacity: 0.7; margin-top: 2px;">Учні ще не поширили екран</div>
-          <button class="empty-state-demo-btn">
+          <button class="empty-state-demo-btn" style="${this.isDemoVisible ? 'display: inline-block;' : 'display: none;'}">
             🧪 Запустити Демо-режим (9 учнів)
           </button>
         </div>

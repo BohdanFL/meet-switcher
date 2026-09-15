@@ -19,11 +19,24 @@ export class ClassroomWall {
   private currentShares: ScreenShare[] = [];
   private cardsMap: Map<string, WallCardItem> = new Map();
   private onToggleDemoHandler?: () => void;
+  private isDemoVisible = false;
 
   constructor(shadow: ShadowRoot, onSelectShare: (share: ScreenShare) => void) {
     this.shadow = shadow;
     this.onSelectShare = onSelectShare;
     this.buildOverlay();
+  }
+
+  public setShowDemo(visible: boolean): void {
+    this.isDemoVisible = visible;
+    const headerDemoBtn = this.overlayEl?.querySelector<HTMLButtonElement>('.wall-demo-header-btn');
+    if (headerDemoBtn) {
+      headerDemoBtn.style.display = visible ? 'inline-flex' : 'none';
+    }
+    const emptyDemoBtn = this.gridEl?.querySelector<HTMLButtonElement>('.wall-empty-demo-btn');
+    if (emptyDemoBtn) {
+      emptyDemoBtn.style.display = visible ? 'inline-block' : 'none';
+    }
   }
 
   public setOnToggleDemo(handler: () => void): void {
@@ -74,7 +87,7 @@ export class ClassroomWall {
         <div class="wall-header-title">
           <span class="wall-title-text">⊞ Classroom Wall • Огляд екранів</span>
           <span class="wall-badge">0 екранів</span>
-          <button class="btn-demo-pill wall-demo-header-btn" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪 Демо</button>
+          <button class="btn-demo-pill wall-demo-header-btn" style="display: none;" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪 Демо</button>
         </div>
         <div class="wall-header-hint">
           Клікніть по плитці, щоб закріпити учня • Закрити: <kbd>Esc</kbd> або <kbd>Alt+W</kbd>
@@ -122,7 +135,7 @@ export class ClassroomWall {
           <div style="font-size: 13px; margin-top: 6px; opacity: 0.7;">
             Очікування, поки учні поширять свої екрани
           </div>
-          <button class="wall-empty-demo-btn">
+          <button class="wall-empty-demo-btn" style="${this.isDemoVisible ? 'display: inline-block;' : 'display: none;'}">
             🧪 Запустити Демо-режим (9 учнів)
           </button>
         </div>

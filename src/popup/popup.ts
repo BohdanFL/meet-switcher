@@ -19,6 +19,21 @@ async function initPopup(): Promise<void> {
     cachedSessions = [];
   }
 
+  // Wire Demo setting toggle
+  const demoToggleEl = document.getElementById('toggle-demo-setting') as HTMLInputElement;
+  if (demoToggleEl) {
+    try {
+      const demoData = await chrome.storage.local.get('meet_switcher_show_demo');
+      demoToggleEl.checked = Boolean(demoData.meet_switcher_show_demo);
+    } catch {
+      demoToggleEl.checked = false;
+    }
+
+    demoToggleEl.addEventListener('change', async () => {
+      await chrome.storage.local.set({ meet_switcher_show_demo: demoToggleEl.checked });
+    });
+  }
+
   if (cachedSessions.length === 0) {
     emptyStateEl.style.display = 'block';
     sessionCardEl.style.display = 'none';

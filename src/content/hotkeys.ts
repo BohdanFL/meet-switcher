@@ -9,10 +9,15 @@ export class HotkeyManager {
   private onCloseWallHandler?: () => void;
   private onToggleDemoHandler?: () => void;
   private onToggleTurboHandler?: () => void;
+  private isDemoEnabled = false;
 
   constructor(controller: PinController) {
     this.controller = controller;
     this.keydownHandler = this.handleKeydown.bind(this);
+  }
+
+  public setDemoEnabled(enabled: boolean): void {
+    this.isDemoEnabled = enabled;
   }
 
   public setOnToggleWall(handler: () => void): void {
@@ -62,8 +67,8 @@ export class HotkeyManager {
       return;
     }
 
-    // 3. Demo simulation toggle: Alt + Shift + D
-    if (e.shiftKey && (e.code === 'KeyD' || e.key.toLowerCase() === 'd')) {
+    // 3. Demo simulation toggle: Alt + Shift + D (only if demo mode enabled in settings)
+    if (this.isDemoEnabled && e.shiftKey && (e.code === 'KeyD' || e.key.toLowerCase() === 'd')) {
       e.preventDefault();
       e.stopPropagation();
       if (this.onToggleDemoHandler) {
