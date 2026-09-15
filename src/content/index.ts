@@ -5,11 +5,17 @@ import { SwitcherHud } from './ui/hud';
 import { ClassroomWall } from './ui/wall';
 import { MockGenerator } from './mock-generator';
 import { AnimationKiller } from './animation-killer';
+import { DiagnosticsLogger } from '../diagnostics/logger.ts';
+import { CallMonitor } from '../diagnostics/call-monitor.ts';
 
 // Prevent duplicate script execution
 declare global {
   interface Window {
     __MEET_SWITCHER_INITIALIZED__?: boolean;
+    __MEET_SWITCHER_LOGS__?: {
+      download: () => void;
+      getSession: () => any;
+    };
   }
 }
 
@@ -19,7 +25,17 @@ function initMeetSwitcher(): void {
   }
   window.__MEET_SWITCHER_INITIALIZED__ = true;
 
-  console.log('[MeetSwitcher] Initializing Google Meet screen switcher extension...');
+  const logger = DiagnosticsLogger.getInstance();
+  const callMonitor = new CallMonitor(logger);
+  callMonitor.start();
+
+  // Expose DevTools console utility
+  window.__MEET_SWITCHER_LOGS__ = {
+    download: () => callMonitor.triggerAutoExport('manual_console_trigger'),
+    getSession: () => logger.getSession(),
+  };
+
+  logger.log('SYSTEM', 'Initializing Google Meet screen switcher extension...');
 
   const animKiller = new AnimationKiller();
   const detector = new ScreenDetector();
@@ -35,8 +51,18 @@ function initMeetSwitcher(): void {
   hud.setTurboActive(animKiller.isAnimationDisabled());
 
   // Wire Classroom Wall toggling
-  const toggleWall = () => {
-    wall.toggle(detector.getScreenShares());
+  const toggleWall = async () => {
+    if (!wall.isOpen()) {
+      if (detector.isAnyStreamPinned()) {
+        console.log('[MeetSwitcher] Unpinning to expand full grid for Classroom Wall...');
+        await controller.unpin();
+        await new Promise((r) => setTimeout(r, 100));
+        detector.scan();
+      }
+      wall.open(detector.getScreenShares());
+    } else {
+      wall.close();
+    }
   };
   const closeWall = () => {
     wall.close();

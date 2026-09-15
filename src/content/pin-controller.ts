@@ -1,11 +1,13 @@
 import { ScreenShare } from '../types';
 import { ScreenDetector } from './detector';
 import { AnimationKiller } from './animation-killer';
+import { DiagnosticsLogger } from '../diagnostics/logger.ts';
 
 export class PinController {
   private detector: ScreenDetector;
   private isSwitching = false;
   private animationKiller?: AnimationKiller;
+  private logger = DiagnosticsLogger.getInstance();
 
   constructor(detector: ScreenDetector, animationKiller?: AnimationKiller) {
     this.detector = detector;
@@ -18,6 +20,10 @@ export class PinController {
 
   public getAnimationKiller(): AnimationKiller | undefined {
     return this.animationKiller;
+  }
+
+  public hasPinnedStream(): boolean {
+    return this.detector.isAnyStreamPinned();
   }
 
   /**
@@ -67,7 +73,7 @@ export class PinController {
 
     try {
       await this.unpinActiveStreams();
-      setTimeout(() => this.detector.scan(), 150);
+      setTimeout(() => this.detector.scan(), 100);
       return true;
     } finally {
       this.isSwitching = false;
@@ -76,6 +82,7 @@ export class PinController {
 
   /**
    * Core switching logic: If already pinned -> Unpin (toggle). Otherwise unpin others and pin target.
+   * Resilient to Google Meet's 3-tile sidebar overflow by unpinning to expand the full grid when needed.
    */
   public async switchToShare(target: ScreenShare): Promise<boolean> {
     if (this.isSwitching) return false;
@@ -85,41 +92,83 @@ export class PinController {
       // Toggle behavior: If this exact share is ALREADY pinned, unpin it!
       if (target.isPinned) {
         console.log(`[MeetSwitcher] "${target.participantName}" is already pinned. Unpinning...`);
+        this.logger.log('ACTION', `Unpinned active stream: "${target.participantName}"`);
         await this.unpinActiveStreams();
-        setTimeout(() => this.detector.scan(), 30);
+        setTimeout(() => this.detector.scan(), 50);
         return true;
       }
 
-      // 1. Ensure target tile is in view and has valid geometry
-      await this.ensureTileVisible(target.tileElement);
+      // Check whether target tile is currently in DOM and visible
+      let currentTile = target.tileElement;
+      let isInDom = Boolean(
+        currentTile &&
+        document.body.contains(currentTile) &&
+        currentTile.getBoundingClientRect().width > 0
+      );
 
-      // 2. Hover over the target tile
-      this.hoverTile(target.tileElement);
+      this.logger.log('ACTION', `Request switch to [${target.index}] "${target.participantName}"`, {
+        targetId: target.id,
+        isInDom,
+      });
 
-      // 3. Locate Pin button directly on target tile
-      let pinBtn = this.detector.findPinButton(target.tileElement);
+      // If off-screen (because Google Meet in sidebar mode only renders ~3 tiles):
+      if (!isInDom) {
+        console.log(
+          `[MeetSwitcher] Tile for "${target.participantName}" is off-screen. Expanding Meet grid...`
+        );
+        this.logger.log('ACTION', `Tile off-screen in sidebar, expanding grid for "${target.participantName}"`);
+        await this.unpinActiveStreams();
+        await this.sleep(80);
+
+        const fresh = this.detector.scan();
+        const refreshed = fresh.find((s) => s.id === target.id || s.index === target.index);
+        if (refreshed && refreshed.tileElement && document.body.contains(refreshed.tileElement)) {
+          currentTile = refreshed.tileElement;
+          target = refreshed;
+          isInDom = true;
+        }
+      }
+
+      if (!currentTile || !document.body.contains(currentTile)) {
+        const snap = this.logger.captureDomSnapshot(this.hasPinnedStream());
+        this.logger.recordSwitch(target.participantName, target.index, false, 'Tile not in DOM');
+        this.logger.log('ERROR', `Could not locate tile for "${target.participantName}"`, { targetId: target.id }, snap);
+        console.warn(`[MeetSwitcher] Could not locate tile for "${target.participantName}"`);
+        return false;
+      }
+
+      // 1. Ensure target tile has valid geometry
+      await this.ensureTileVisible(currentTile);
+
+      // 2. Hover over the target tile to reveal Meet action buttons
+      this.hoverTile(currentTile);
+
+      // 3. Locate Pin button on target tile
+      let pinBtn = this.detector.findPinButton(currentTile);
 
       if (!pinBtn) {
-        for (let i = 0; i < 3; i++) {
-          await this.sleep(20);
-          this.hoverTile(target.tileElement);
-          pinBtn = this.detector.findPinButton(target.tileElement);
+        for (let i = 0; i < 4; i++) {
+          await this.sleep(25);
+          this.hoverTile(currentTile);
+          pinBtn = this.detector.findPinButton(currentTile);
           if (pinBtn) break;
         }
       }
 
-      // FAST PATH: Directly pin target tile without unpinning first
+      // FAST PATH: Pin directly
       if (pinBtn) {
-        console.log(`[MeetSwitcher] Direct-pinning "${target.participantName}"...`);
+        console.log(`[MeetSwitcher] Pinning presentation "${target.participantName}"...`);
+        this.logger.log('ACTION', `Dispatched Pin click on tile for "${target.participantName}"`);
         this.dispatchFullClick(pinBtn);
 
-        // Quick check for host popup menu if opened
+        // Crucial: check host popup menu ("For myself only" vs "For everyone")
         await this.handlePinMenuIfOpened();
+        this.logger.recordSwitch(target.participantName, target.index, true);
 
-        // Clean up previously pinned screens (if multi-pin kept them)
+        // Clean up any previously pinned screens (if multi-pin kept them)
         const allShares = this.detector.getScreenShares();
         for (const share of allShares) {
-          if (share.id !== target.id && share.isPinned) {
+          if (share.id !== target.id && share.isPinned && share.tileElement) {
             this.hoverTile(share.tileElement);
             const otherUnpin = this.detector.findUnpinButton(share.tileElement);
             if (otherUnpin) {
@@ -128,26 +177,38 @@ export class PinController {
           }
         }
 
-        setTimeout(() => this.detector.scan(), 30);
+        setTimeout(() => this.detector.scan(), 50);
         return true;
       }
 
-      // FALLBACK PATH: If direct pin wasn't found, unpin first and retry
+      // FALLBACK PATH: Unpin active streams and retry
       console.log(`[MeetSwitcher] Direct pin not found, unpinning active streams and retrying...`);
+      this.logger.log('ACTION', `Direct pin button not found, falling back to global unpin and retry for "${target.participantName}"`);
       await this.unpinActiveStreams();
-      await this.sleep(30);
+      await this.sleep(50);
 
-      await this.ensureTileVisible(target.tileElement);
-      this.hoverTile(target.tileElement);
-      pinBtn = this.detector.findPinButton(target.tileElement);
+      const refreshedShares = this.detector.scan();
+      const ref = refreshedShares.find((s) => s.id === target.id || s.index === target.index);
+      const retryTile = ref?.tileElement || currentTile;
 
-      if (pinBtn) {
-        this.dispatchFullClick(pinBtn);
-        await this.handlePinMenuIfOpened();
-        setTimeout(() => this.detector.scan(), 30);
-        return true;
+      if (retryTile && document.body.contains(retryTile)) {
+        await this.ensureTileVisible(retryTile);
+        this.hoverTile(retryTile);
+        pinBtn = this.detector.findPinButton(retryTile);
+
+        if (pinBtn) {
+          this.logger.log('ACTION', `Dispatched retry Pin click on tile for "${target.participantName}"`);
+          this.dispatchFullClick(pinBtn);
+          await this.handlePinMenuIfOpened();
+          this.logger.recordSwitch(target.participantName, target.index, true);
+          setTimeout(() => this.detector.scan(), 50);
+          return true;
+        }
       }
 
+      const snap = this.logger.captureDomSnapshot(this.hasPinnedStream());
+      this.logger.recordSwitch(target.participantName, target.index, false, 'Pin button not found after retry');
+      this.logger.log('ERROR', `Pin button not found on tile for "${target.participantName}"`, { targetId: target.id }, snap);
       console.warn(`[MeetSwitcher] Pin button not found on tile for "${target.participantName}"`);
       return false;
     } finally {
@@ -164,7 +225,7 @@ export class PinController {
 
     // 1. Try unpinning known shares from detector
     for (const share of shares) {
-      if (share.isPinned) {
+      if (share.isPinned && share.tileElement && document.body.contains(share.tileElement)) {
         this.hoverTile(share.tileElement);
         const unpinBtn = this.detector.findUnpinButton(share.tileElement);
         if (unpinBtn) {
@@ -188,6 +249,7 @@ export class PinController {
           label.includes('открепить') ||
           tooltip.includes('unpin') ||
           tooltip.includes('відкріпити') ||
+          tooltip.includes('открепить') ||
           text.includes('keep_off')
         ) {
           this.dispatchFullClick(btn);
@@ -238,26 +300,29 @@ export class PinController {
       // Ignore scroll errors
     }
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 4; i++) {
       const rect = tile.getBoundingClientRect();
       if (rect.width > 10 && rect.height > 10) {
         return true;
       }
-      await this.sleep(40);
+      await this.sleep(25);
     }
     return false;
   }
 
   /**
    * Google Meet for hosts/moderators opens a menu: "For myself only" vs "For everyone".
-   * This helper checks if a menu appeared and auto-selects "For myself only".
+   * STRICT SAFETY: NEVER clicks "For everyone" / "Для всіх".
+   * Selects "For myself only" / "Лише для мене".
    */
   private async handlePinMenuIfOpened(): Promise<boolean> {
-    for (let i = 0; i < 2; i++) {
-      await this.sleep(15);
+    for (let i = 0; i < 5; i++) {
+      await this.sleep(40);
 
       const menus = Array.from(
-        document.querySelectorAll<HTMLElement>('div[role="menu"], ul[role="menu"], div[role="dialog"]')
+        document.querySelectorAll<HTMLElement>(
+          'div[role="menu"], ul[role="menu"], div[role="dialog"], div.VfPpkd-xl07Ob-XxIAqe'
+        )
       );
 
       for (const menu of menus) {
@@ -267,27 +332,47 @@ export class PinController {
           menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="option"], button, li')
         );
 
-        // First pass: look specifically for "myself" / "для себе" / "для себя"
+        if (items.length === 0) continue;
+
+        this.logger.log('MENU', `Host pin menu appeared with ${items.length} options`, {
+          options: items.map((i) => i.textContent?.trim() || i.getAttribute('aria-label') || ''),
+        });
+
+        const forMyselfRegex = /(?:myself|for me|мене|себе|себя)/i;
+        const forEveryoneRegex = /(?:everyone|all|всіх|всех)/i;
+
+        // 1. Direct match: specifically target "Лише для мене" / "For myself only"
         for (const item of items) {
-          const text = (item.textContent || '').toLowerCase();
-          const aria = (item.getAttribute('aria-label') || '').toLowerCase();
+          const text = (item.textContent || '').trim().toLowerCase();
+          const aria = (item.getAttribute('aria-label') || '').trim().toLowerCase();
 
           if (
-            text.includes('myself') ||
-            text.includes('для себе') ||
-            text.includes('для себя') ||
-            aria.includes('myself') ||
-            aria.includes('для себе') ||
-            aria.includes('для себя')
+            (forMyselfRegex.test(text) || forMyselfRegex.test(aria)) &&
+            !forEveryoneRegex.test(text) &&
+            !forEveryoneRegex.test(aria)
           ) {
+            console.log(
+              `[MeetSwitcher] Selected host pin option: "For myself only" ("${item.textContent?.trim()}")`
+            );
+            this.logger.log('MENU', `Selected "For myself only" option: "${item.textContent?.trim()}"`);
             this.dispatchFullClick(item);
             return true;
           }
         }
 
-        // Second pass: click the 1st option if menu appeared
-        if (items.length > 0) {
-          this.dispatchFullClick(items[0]);
+        // 2. Safe fallback: pick the option that does NOT contain "everyone" / "для всіх"
+        const safeItems = items.filter((item) => {
+          const text = (item.textContent || '').trim().toLowerCase();
+          const aria = (item.getAttribute('aria-label') || '').trim().toLowerCase();
+          return !forEveryoneRegex.test(text) && !forEveryoneRegex.test(aria);
+        });
+
+        if (safeItems.length > 0) {
+          console.log(
+            `[MeetSwitcher] Selected safe non-everyone pin option: "${safeItems[0].textContent?.trim()}"`
+          );
+          this.logger.log('MENU', `Selected safe fallback option: "${safeItems[0].textContent?.trim()}"`);
+          this.dispatchFullClick(safeItems[0]);
           return true;
         }
       }

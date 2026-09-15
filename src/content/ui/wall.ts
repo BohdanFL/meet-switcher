@@ -182,6 +182,7 @@ export class ClassroomWall {
           existing.videoEl.srcObject !== share.videoElement.srcObject
         ) {
           existing.videoEl.srcObject = share.videoElement.srcObject;
+          existing.videoEl.play().catch(() => {});
         }
       } else {
         // Create new card for this screen share
