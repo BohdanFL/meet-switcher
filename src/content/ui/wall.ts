@@ -1,4 +1,5 @@
 import { ScreenShare } from '../../types';
+import { AliasManager } from '../alias-manager';
 
 interface WallCardItem {
   cardEl: HTMLElement;
@@ -20,10 +21,17 @@ export class ClassroomWall {
   private cardsMap: Map<string, WallCardItem> = new Map();
   private onToggleDemoHandler?: () => void;
   private isDemoVisible = false;
+  private aliasManager: AliasManager;
 
   constructor(shadow: ShadowRoot, onSelectShare: (share: ScreenShare) => void) {
     this.shadow = shadow;
     this.onSelectShare = onSelectShare;
+    this.aliasManager = AliasManager.getInstance();
+    this.aliasManager.onUpdate(() => {
+      if (this.isVisible) {
+        this.render();
+      }
+    });
     this.buildOverlay();
   }
 
@@ -179,13 +187,15 @@ export class ClassroomWall {
     // 2. Add or update cards
     for (const share of this.currentShares) {
       const existing = this.cardsMap.get(share.id);
+      const displayName = this.aliasManager.formatDisplayName(share.participantName);
+
       if (existing) {
         // Update attributes without re-creating DOM or touching the playing video!
         existing.share = share;
         existing.cardEl.className = `wall-card ${share.isPinned ? 'pinned' : ''}`;
-        existing.cardEl.title = `Закріпити екран ${share.participantName} (Alt + ${share.index})`;
+        existing.cardEl.title = `Закріпити екран ${displayName} (Alt + ${share.index})`;
         existing.numberEl.textContent = `${share.index}`;
-        existing.nameEl.textContent = share.participantName;
+        existing.nameEl.textContent = displayName;
         existing.statusEl.textContent = share.isPinned ? '📌 В центрі' : '';
         existing.statusEl.style.display = share.isPinned ? 'inline' : 'none';
 
@@ -201,21 +211,72 @@ export class ClassroomWall {
         // Create new card for this screen share
         const card = document.createElement('div');
         card.className = `wall-card ${share.isPinned ? 'pinned' : ''}`;
-        card.title = `Закріпити екран ${share.participantName} (Alt + ${share.index})`;
+        card.title = `Закріпити екран ${displayName} (Alt + ${share.index})`;
 
         card.innerHTML = `
           <div class="wall-card-badge">
             <span class="wall-card-number">${share.index}</span>
-            <span class="wall-card-name">${this.escapeHtml(share.participantName)}</span>
+            <span class="wall-card-name">${this.escapeHtml(displayName)}</span>
+            <button class="wall-card-rename-btn" title="Перейменувати учня (встановити псевдонім)">✏️</button>
             <span class="wall-card-status" style="${share.isPinned ? '' : 'display: none;'}">📌 В центрі</span>
           </div>
           <div class="wall-video-wrap"></div>
         `;
 
+        const badgeEl = card.querySelector<HTMLElement>('.wall-card-badge')!;
         const numberEl = card.querySelector<HTMLElement>('.wall-card-number')!;
         const nameEl = card.querySelector<HTMLElement>('.wall-card-name')!;
+        const renameBtn = card.querySelector<HTMLButtonElement>('.wall-card-rename-btn')!;
         const statusEl = card.querySelector<HTMLElement>('.wall-card-status')!;
         const videoWrap = card.querySelector<HTMLElement>('.wall-video-wrap')!;
+
+        renameBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const currentAlias = this.aliasManager.getAlias(share.participantName) || '';
+
+          badgeEl.innerHTML = `
+            <span class="wall-card-number">${share.index}</span>
+            <div class="wall-card-edit-wrap">
+              <input class="wall-card-edit-input" type="text" value="${this.escapeHtml(currentAlias)}" placeholder="Ім'я учня...">
+              <button class="rename-action-btn wall-save-btn" title="Зберегти (Enter)">✓</button>
+              <button class="rename-action-btn wall-cancel-btn" title="Скасувати (Esc)">✕</button>
+            </div>
+          `;
+
+          const input = badgeEl.querySelector<HTMLInputElement>('.wall-card-edit-input')!;
+          const saveBtn = badgeEl.querySelector<HTMLButtonElement>('.wall-save-btn')!;
+          const cancelBtn = badgeEl.querySelector<HTMLButtonElement>('.wall-cancel-btn')!;
+
+          const save = async () => {
+            const val = input.value.trim();
+            await this.aliasManager.setAlias(share.participantName, val);
+            this.render();
+          };
+
+          const cancel = () => {
+            this.render();
+          };
+
+          input.addEventListener('click', (ev) => ev.stopPropagation());
+          input.addEventListener('keydown', (ev) => {
+            ev.stopPropagation();
+            if (ev.key === 'Enter') save();
+            else if (ev.key === 'Escape') cancel();
+          });
+          saveBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            save();
+          });
+          cancelBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            cancel();
+          });
+
+          setTimeout(() => {
+            input.focus();
+            input.select();
+          }, 10);
+        });
 
         const previewVideo = document.createElement('video');
         previewVideo.autoplay = true;
