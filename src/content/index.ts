@@ -5,6 +5,8 @@ import { SwitcherHud } from './ui/hud';
 import { ClassroomWall } from './ui/wall';
 import { MockGenerator } from './mock-generator';
 import { AnimationKiller } from './animation-killer';
+import { AliasManager } from './alias-manager';
+import { TileBadgeDecorator } from './ui/tile-badge';
 import { DiagnosticsLogger } from '../diagnostics/logger.ts';
 import { CallMonitor } from '../diagnostics/call-monitor.ts';
 
@@ -41,6 +43,9 @@ function initMeetSwitcher(): void {
   const detector = new ScreenDetector();
   const controller = new PinController(detector, animKiller);
   const hotkeys = new HotkeyManager(controller);
+  const aliasManager = AliasManager.getInstance();
+  aliasManager.init();
+  const tileDecorator = new TileBadgeDecorator(aliasManager);
   const hud = new SwitcherHud(controller);
   const wall = new ClassroomWall(hud.getShadowRoot(), (share) => {
     controller.switchToShare(share);
@@ -92,12 +97,18 @@ function initMeetSwitcher(): void {
   hotkeys.setOnToggleDemo(toggleDemo);
   hotkeys.setOnToggleTurbo(toggleTurbo);
 
-  // Connect detector output to HUD and Wall
+  // Connect detector output to HUD, Wall, and Tile Badges
   detector.onUpdate((shares) => {
     hud.update(shares);
     if (wall.isOpen()) {
       wall.updateShares(shares);
     }
+    tileDecorator.updateBadges(shares);
+  });
+
+  // Re-render video tile badges whenever aliases are added, edited, or removed
+  aliasManager.onUpdate(() => {
+    tileDecorator.updateBadges(detector.getScreenShares());
   });
 
   // Load and apply Demo visibility setting
