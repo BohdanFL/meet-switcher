@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "Швидке перемикання між активними екранами учнів у Google Meet в 1 клік або гарячими клавішами.",
   "permissions": [
-    "storage"
+    "storage",
+    "downloads"
   ],
   "host_permissions": [
     "https://meet.google.com/*"
@@ -21,7 +22,8 @@
     "type": "module"
   },
   "action": {
-    "default_title": "MeetSwitcher"
+    "default_title": "MeetSwitcher",
+    "default_popup": "popup.html"
   },
   "icons": {
     "16": "icons/icon16.png",

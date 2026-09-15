@@ -40,16 +40,42 @@ async function run() {
     },
   });
 
-  // 3. Copy manifest.json
+  // 3. Build popup script
+  await build({
+    configFile: false,
+    build: {
+      outDir: 'dist',
+      emptyOutDir: false,
+      sourcemap: true,
+      watch: isWatch ? {} : null,
+      lib: {
+        entry: path.resolve('src/popup/popup.ts'),
+        formats: ['es'],
+        fileName: () => 'popup.js',
+      },
+    },
+  });
+
+  // 4. Copy manifest.json
   if (fs.existsSync('manifest.json')) {
     fs.copyFileSync('manifest.json', 'dist/manifest.json');
     console.log('✓ Copied manifest.json to dist/');
   }
 
-  // 4. Copy icons
+  // 5. Copy icons
   if (fs.existsSync('icons')) {
     fs.cpSync('icons', 'dist/icons', { recursive: true });
     console.log('✓ Copied icons/ to dist/');
+  }
+
+  // 6. Copy popup assets
+  if (fs.existsSync('src/popup/popup.html')) {
+    fs.copyFileSync('src/popup/popup.html', 'dist/popup.html');
+    console.log('✓ Copied popup.html to dist/');
+  }
+  if (fs.existsSync('src/popup/popup.css')) {
+    fs.copyFileSync('src/popup/popup.css', 'dist/popup.css');
+    console.log('✓ Copied popup.css to dist/');
   }
 
   console.log('✅ Build complete! Extension ready in dist/');

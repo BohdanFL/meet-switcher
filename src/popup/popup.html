@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MeetSwitcher Діагностика</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="header-title">
+        <span class="logo-icon">⊞</span>
+        <h1>MeetSwitcher</h1>
+      </div>
+      <span class="version-tag">v1.0.0</span>
+    </header>
+
+    <!-- Content Area -->
+    <main class="popup-body">
+      <!-- Empty State (hidden when sessions exist) -->
+      <div id="empty-state" class="empty-state" style="display: none;">
+        <div class="empty-icon">📁</div>
+        <h3>Немає збережених сесій</h3>
+        <p>Проведіть урок у Google Meet. Лог запишеться та збережеться тут автоматично.</p>
+      </div>
+
+      <!-- Active / Latest Session Card -->
+      <div id="session-card" class="session-card">
+        <div class="session-header">
+          <span class="session-label">Останній урок</span>
+          <span id="session-status" class="status-pill success">🟢 Успішно</span>
+        </div>
+
+        <div class="session-info-grid">
+          <div class="info-item">
+            <span class="info-label">Дата та час</span>
+            <span id="session-date" class="info-val">--</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Тривалість</span>
+            <span id="session-duration" class="info-val">--</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Екранів учнів</span>
+            <span id="session-screens" class="info-val">0</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Перемикань</span>
+            <span id="session-switches" class="info-val">0</span>
+          </div>
+        </div>
+
+        <!-- Participants preview -->
+        <div class="participants-box">
+          <span class="info-label">Виявлені учні:</span>
+          <div id="participants-list" class="participants-tags"></div>
+        </div>
+
+        <!-- Actions -->
+        <div class="action-buttons">
+          <button id="btn-download" class="btn btn-primary">
+            <span>⬇</span> Завантажити лог (.json)
+          </button>
+          <button id="btn-copy" class="btn btn-secondary">
+            <span>📋</span> Скопіювати для аналізу
+          </button>
+        </div>
+        <div id="copy-feedback" class="copy-feedback" style="display: none;">
+          ✓ Скопійовано в буфер обміну!
+        </div>
+      </div>
+
+      <!-- Past Sessions Selector -->
+      <div id="past-sessions-section" class="past-sessions-section">
+        <div class="section-title">Історія останніх сесій</div>
+        <select id="session-selector" class="session-select"></select>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="popup-footer">
+      <button id="btn-clear" class="btn-text-danger">Очистити збережені логи</button>
+      <span class="privacy-note">🔒 Дані зберігаються локально</span>
+    </footer>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
