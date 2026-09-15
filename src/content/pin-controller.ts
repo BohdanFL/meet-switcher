@@ -73,6 +73,7 @@ export class PinController {
 
     try {
       await this.unpinActiveStreams();
+      this.detector.markAllUnpinned();
       setTimeout(() => this.detector.scan(), 100);
       return true;
     } finally {
@@ -94,6 +95,7 @@ export class PinController {
         console.log(`[MeetSwitcher] "${target.participantName}" is already pinned. Unpinning...`);
         this.logger.log('ACTION', `Unpinned active stream: "${target.participantName}"`);
         await this.unpinActiveStreams();
+        this.detector.markAllUnpinned();
         setTimeout(() => this.detector.scan(), 50);
         return true;
       }
@@ -118,14 +120,25 @@ export class PinController {
         );
         this.logger.log('ACTION', `Tile off-screen in sidebar, expanding grid for "${target.participantName}"`);
         await this.unpinActiveStreams();
-        await this.sleep(80);
+        this.detector.markAllUnpinned();
 
-        const fresh = this.detector.scan();
-        const refreshed = fresh.find((s) => s.id === target.id || s.index === target.index);
-        if (refreshed && refreshed.tileElement && document.body.contains(refreshed.tileElement)) {
-          currentTile = refreshed.tileElement;
-          target = refreshed;
-          isInDom = true;
+        // Google Meet needs 200-400ms to reflow and mount all tiles into the DOM.
+        // Poll with retries for up to 800ms (16 attempts * 50ms)
+        const targetNorm = this.detector.normalizeParticipantName(target.participantName);
+        for (let attempt = 0; attempt < 16; attempt++) {
+          await this.sleep(50);
+          const fresh = this.detector.scan();
+          const refreshed = fresh.find((s) =>
+            s.id === target.id ||
+            s.index === target.index ||
+            this.detector.normalizeParticipantName(s.participantName) === targetNorm
+          );
+          if (refreshed?.tileElement && document.body.contains(refreshed.tileElement)) {
+            currentTile = refreshed.tileElement;
+            target = refreshed;
+            isInDom = true;
+            break;
+          }
         }
       }
 
@@ -137,18 +150,21 @@ export class PinController {
         return false;
       }
 
+      // Notify detector about who is expected to be pinned on center stage
+      this.detector.setExpectedPinnedParticipant(target.participantName);
+
       // 1. Ensure target tile has valid geometry
       await this.ensureTileVisible(currentTile);
 
       // 2. Hover over the target tile to reveal Meet action buttons
       this.hoverTile(currentTile);
 
-      // 3. Locate Pin button on target tile
+      // 3. Locate Pin button on target tile with retries
       let pinBtn = this.detector.findPinButton(currentTile);
 
       if (!pinBtn) {
-        for (let i = 0; i < 4; i++) {
-          await this.sleep(25);
+        for (let i = 0; i < 6; i++) {
+          await this.sleep(40);
           this.hoverTile(currentTile);
           pinBtn = this.detector.findPinButton(currentTile);
           if (pinBtn) break;
@@ -185,11 +201,26 @@ export class PinController {
       console.log(`[MeetSwitcher] Direct pin not found, unpinning active streams and retrying...`);
       this.logger.log('ACTION', `Direct pin button not found, falling back to global unpin and retry for "${target.participantName}"`);
       await this.unpinActiveStreams();
-      await this.sleep(50);
+      this.detector.markAllUnpinned();
 
-      const refreshedShares = this.detector.scan();
-      const ref = refreshedShares.find((s) => s.id === target.id || s.index === target.index);
-      const retryTile = ref?.tileElement || currentTile;
+      const targetNorm = this.detector.normalizeParticipantName(target.participantName);
+      let retryTile: HTMLElement | null = null;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await this.sleep(50);
+        const refreshedShares = this.detector.scan();
+        const ref = refreshedShares.find((s) =>
+          s.id === target.id ||
+          s.index === target.index ||
+          this.detector.normalizeParticipantName(s.participantName) === targetNorm
+        );
+        if (ref?.tileElement && document.body.contains(ref.tileElement)) {
+          retryTile = ref.tileElement;
+          break;
+        }
+      }
+      if (!retryTile) {
+        retryTile = currentTile;
+      }
 
       if (retryTile && document.body.contains(retryTile)) {
         await this.ensureTileVisible(retryTile);
@@ -257,6 +288,8 @@ export class PinController {
         }
       }
     }
+
+    this.detector.markAllUnpinned();
   }
 
   /**

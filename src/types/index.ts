@@ -44,5 +44,5 @@ export interface HudState {
  */
 export type ScreenSharesListener = (shares: ScreenShare[]) => void;
 
-export * from './alias';
+export * from './alias.ts';
 

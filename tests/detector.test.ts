@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ScreenDetector } from '../src/content/detector.ts';
 
 // Helper to mock minimal DOM Element
 class MockElement {
@@ -32,6 +33,11 @@ class MockElement {
     this.children.push(child);
   }
 
+  querySelector(selector: string): MockElement | null {
+    const all = this.querySelectorAll(selector);
+    return all.length > 0 ? all[0] : null;
+  }
+
   querySelectorAll(selector: string): MockElement[] {
     const results: MockElement[] = [];
     const traverse = (el: MockElement) => {
@@ -41,6 +47,10 @@ class MockElement {
         } else if (selector.includes('span') && child.tagName === 'SPAN') {
           results.push(child);
         } else if (selector.includes('div') && child.tagName === 'DIV') {
+          results.push(child);
+        } else if (selector.includes('ink-canvas') && child.classList.contains('ink-canvas-parent')) {
+          results.push(child);
+        } else if (selector.includes('zoom') && (child.getAttribute('aria-label')?.toLowerCase().includes('zoom') || child.textContent.includes('zoom'))) {
           results.push(child);
         }
         traverse(child);
@@ -228,3 +238,86 @@ test('Host menu option in English selects "For myself only"', () => {
   const selectedIndex = selectHostPinOption(optionsEn);
   assert.equal(selectedIndex, 1, 'Must select "For myself only" (index 1)');
 });
+
+test('Correctly identify presentation tile on center stage by Zoom controls', () => {
+  const detector = new ScreenDetector();
+  const stageTile = new MockElement('div', '');
+  const zoomInBtn = new MockElement('button', 'zoom_in');
+  zoomInBtn.setAttribute('aria-label', 'Zoom in');
+  const zoomOutBtn = new MockElement('button', 'zoom_out');
+  zoomOutBtn.setAttribute('aria-label', 'Zoom out');
+  stageTile.appendChild(zoomInBtn);
+  stageTile.appendChild(zoomOutBtn);
+
+  assert.equal(detector.isPresentationTile(stageTile as any), true, 'Tile with zoom buttons must be identified as presentation');
+});
+
+test('Correctly identify presentation tile on center stage by ink canvas', () => {
+  const detector = new ScreenDetector();
+  const stageTile = new MockElement('div', '');
+  const canvas = new MockElement('div', '');
+  canvas.className = 'ink-canvas-parent';
+  stageTile.appendChild(canvas);
+
+  assert.equal(detector.isPresentationTile(stageTile as any), true, 'Tile with ink-canvas must be identified as presentation');
+});
+
+test('Validate participant name strictly rejects system phrases and UI strings', () => {
+  const detector = new ScreenDetector();
+
+  // Must reject:
+  assert.equal(detector.isValidParticipantName('Try annotating (visible to everyone)'), false);
+  assert.equal(detector.isValidParticipantName('Спробуйте анотувати (видимо для всіх)'), false);
+  assert.equal(detector.isValidParticipantName('Zoom in'), false);
+  assert.equal(detector.isValidParticipantName('Enter Full Screen'), false);
+  assert.equal(detector.isValidParticipantName('More options for Alex'), false);
+  assert.equal(detector.isValidParticipantName('You can\'t unmute someone else'), false);
+  assert.equal(detector.isValidParticipantName('.ink-canvas-parent { height: 100%; }'), false);
+  assert.equal(detector.isValidParticipantName('presentation'), false);
+  assert.equal(detector.isValidParticipantName('презентація'), false);
+  assert.equal(detector.isValidParticipantName('Учень / Presentation'), false);
+
+  // Must accept:
+  assert.equal(detector.isValidParticipantName('Татьяна'), true);
+  assert.equal(detector.isValidParticipantName('Viktoria Hlushko'), true);
+  assert.equal(detector.isValidParticipantName('Nelia Herasymiak'), true);
+  assert.equal(detector.isValidParticipantName('Юля Примачук'), true);
+  assert.equal(detector.isValidParticipantName('Мила Кочвар'), true);
+  assert.equal(detector.isValidParticipantName('Michael Ryzhuk'), true);
+  assert.equal(detector.isValidParticipantName('Богдан Рубаха'), true);
+});
+
+test('Normalize participant names correctly collapses whitespace, casing, and quotes', () => {
+  const detector = new ScreenDetector();
+  assert.equal(detector.normalizeParticipantName('  Viktoria   Hlushko  '), 'viktoria hlushko');
+  assert.equal(detector.normalizeParticipantName('Татьяна'), 'татьяна');
+  assert.equal(detector.normalizeParticipantName("Nelia O'Herasymiak"), 'nelia oherasymiak');
+});
+
+test('Center stage tile resolves expected participant name when controls are absent', () => {
+  const detector = new ScreenDetector();
+  detector.setExpectedPinnedParticipant('Татьяна');
+
+  const stageTile = new MockElement('div', '');
+  const zoomInBtn = new MockElement('button', 'zoom_in');
+  zoomInBtn.setAttribute('aria-label', 'Zoom in');
+  stageTile.appendChild(zoomInBtn);
+
+  assert.equal(detector.isTilePinned(stageTile as any), true);
+  assert.equal(detector.extractParticipantName(stageTile as any), 'Татьяна');
+});
+
+test('markAllUnpinned clears expected pinned participant', () => {
+  const detector = new ScreenDetector();
+  detector.setExpectedPinnedParticipant('Татьяна');
+  detector.markAllUnpinned();
+
+  const stageTile = new MockElement('div', '');
+  const zoomInBtn = new MockElement('button', 'zoom_in');
+  zoomInBtn.setAttribute('aria-label', 'Zoom in');
+  stageTile.appendChild(zoomInBtn);
+
+  assert.equal(detector.extractParticipantName(stageTile as any), 'Учень / Presentation');
+});
+
+

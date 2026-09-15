@@ -178,8 +178,18 @@ export class DiagnosticsLogger {
         tag: tile.tagName,
         isPresentation:
           Boolean(ariaLabel?.toLowerCase().includes('presentation')) ||
+          Boolean(ariaLabel?.toLowerCase().includes('презентац')) ||
           text.includes('present_to_all') ||
-          text.includes('screen_share'),
+          text.includes('screen_share') ||
+          text.includes('zoom_in') ||
+          text.includes('zoom_out') ||
+          text.includes('open_in_full') ||
+          text.includes('ink-canvas') ||
+          buttons.some(
+            (b) =>
+              (b.ariaLabel || '').toLowerCase().includes('presentation') ||
+              (b.ariaLabel || '').toLowerCase().includes('презентац')
+          ),
         classificationReason: ariaLabel || text.slice(0, 60),
         participantName: ariaLabel || 'Unknown',
         ariaLabel,
