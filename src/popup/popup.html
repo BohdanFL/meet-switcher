@@ -17,79 +17,138 @@
       <span class="version-tag">v1.0.0</span>
     </header>
 
+    <!-- Tabs Navigation -->
+    <nav class="popup-tabs">
+      <button class="tab-btn active" data-tab="tab-roster">👥 Учні (Псевдоніми)</button>
+      <button class="tab-btn" data-tab="tab-diagnostics">📋 Журнал уроку</button>
+    </nav>
+
     <!-- Content Area -->
     <main class="popup-body">
-      <!-- Empty State (hidden when sessions exist) -->
-      <div id="empty-state" class="empty-state" style="display: none;">
-        <div class="empty-icon">📁</div>
-        <h3>Немає збережених сесій</h3>
-        <p>Проведіть урок у Google Meet. Лог запишеться та збережеться тут автоматично.</p>
-      </div>
-
-      <!-- Active / Latest Session Card -->
-      <div id="session-card" class="session-card">
-        <div class="session-header">
-          <span class="session-label">Останній урок</span>
-          <span id="session-status" class="status-pill success">🟢 Успішно</span>
-        </div>
-
-        <div class="session-info-grid">
-          <div class="info-item">
-            <span class="info-label">Дата та час</span>
-            <span id="session-date" class="info-val">--</span>
+      <!-- TAB 1: Roster Management -->
+      <div id="tab-roster" class="tab-pane active">
+        <!-- Quick Add / Edit Card -->
+        <div class="roster-form-card">
+          <div class="form-title">Додати або змінити псевдонім учня</div>
+          <div class="form-row">
+            <input type="text" id="input-orig-name" class="roster-input" placeholder="Ім'я акаунта батьків (напр: Оксана Петренко)">
           </div>
-          <div class="info-item">
-            <span class="info-label">Тривалість</span>
-            <span id="session-duration" class="info-val">--</span>
+          <div class="form-row">
+            <input type="text" id="input-student-name" class="roster-input" placeholder="Ім'я учня (напр: Максим)">
           </div>
-          <div class="info-item">
-            <span class="info-label">Екранів учнів</span>
-            <span id="session-screens" class="info-val">0</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Перемикань</span>
-            <span id="session-switches" class="info-val">0</span>
+          <div class="form-actions">
+            <button id="btn-save-alias" class="btn btn-primary btn-sm">
+              <span>💾</span> Зберегти
+            </button>
+            <button id="btn-cancel-alias" class="btn btn-secondary btn-sm" style="display: none;">
+              Скасувати
+            </button>
           </div>
         </div>
 
-        <!-- Participants preview -->
-        <div class="participants-box">
-          <span class="info-label">Виявлені учні:</span>
-          <div id="participants-list" class="participants-tags"></div>
+        <!-- Search / Filter -->
+        <div class="roster-filter-row">
+          <input type="text" id="input-search-roster" class="roster-search-input" placeholder="🔍 Пошук учня або акаунта...">
         </div>
 
-        <!-- Actions -->
-        <div class="action-buttons">
-          <button id="btn-download" class="btn btn-primary">
-            <span>⬇</span> Завантажити лог (.json)
+        <!-- Roster List -->
+        <div class="roster-list-container">
+          <div id="roster-empty" class="roster-empty" style="display: none;">
+            <div>👥</div>
+            <div>Немає збережених учнів</div>
+            <div style="font-size: 11px; opacity: 0.7; margin-top: 4px;">
+              Введіть ім'я в HUD під час уроку (✏️) або додайте вручну вище.
+            </div>
+          </div>
+          <ul id="roster-list" class="roster-items-list"></ul>
+        </div>
+
+        <!-- Roster Toolbar (Export / Import) -->
+        <div class="roster-toolbar">
+          <button id="btn-export-roster" class="btn-tool" title="Завантажити JSON файл зі списком учнів">
+            <span>⬇</span> Експорт JSON
           </button>
-          <button id="btn-copy" class="btn btn-secondary">
-            <span>📋</span> Скопіювати для аналізу
+          <button id="btn-import-roster" class="btn-tool" title="Завантажити список учнів з JSON файлу">
+            <span>⬆</span> Імпорт JSON
           </button>
-        </div>
-        <div id="copy-feedback" class="copy-feedback" style="display: none;">
-          ✓ Скопійовано в буфер обміну!
+          <input type="file" id="import-file-input" accept=".json" style="display: none;">
         </div>
       </div>
 
-      <!-- Past Sessions Selector -->
-      <div id="past-sessions-section" class="past-sessions-section">
-        <div class="section-title">Історія останніх сесій</div>
-        <select id="session-selector" class="session-select"></select>
-      </div>
+      <!-- TAB 2: Diagnostics & Settings -->
+      <div id="tab-diagnostics" class="tab-pane">
+        <!-- Empty State (hidden when sessions exist) -->
+        <div id="empty-state" class="empty-state" style="display: none;">
+          <div class="empty-icon">📁</div>
+          <h3>Немає збережених сесій</h3>
+          <p>Проведіть урок у Google Meet. Лог запишеться та збережеться тут автоматично.</p>
+        </div>
 
-      <!-- Settings Card -->
-      <div class="settings-card">
-        <div class="section-title">Налаштування</div>
-        <div class="setting-row">
-          <div class="setting-text">
-            <span class="setting-name">Демо-режим (🧪 Демо)</span>
-            <span class="setting-desc">Відображати тестові кнопки запуску 9 віртуальних учнів</span>
+        <!-- Active / Latest Session Card -->
+        <div id="session-card" class="session-card">
+          <div class="session-header">
+            <span class="session-label">Останній урок</span>
+            <span id="session-status" class="status-pill success">🟢 Успішно</span>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="toggle-demo-setting">
-            <span class="slider round"></span>
-          </label>
+
+          <div class="session-info-grid">
+            <div class="info-item">
+              <span class="info-label">Дата та час</span>
+              <span id="session-date" class="info-val">--</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Тривалість</span>
+              <span id="session-duration" class="info-val">--</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Екранів учнів</span>
+              <span id="session-screens" class="info-val">0</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Перемикань</span>
+              <span id="session-switches" class="info-val">0</span>
+            </div>
+          </div>
+
+          <!-- Participants preview -->
+          <div class="participants-box">
+            <span class="info-label">Виявлені учні:</span>
+            <div id="participants-list" class="participants-tags"></div>
+          </div>
+
+          <!-- Actions -->
+          <div class="action-buttons">
+            <button id="btn-download" class="btn btn-primary">
+              <span>⬇</span> Завантажити лог (.json)
+            </button>
+            <button id="btn-copy" class="btn btn-secondary">
+              <span>📋</span> Скопіювати для аналізу
+            </button>
+          </div>
+          <div id="copy-feedback" class="copy-feedback" style="display: none;">
+            ✓ Скопійовано в буфер обміну!
+          </div>
+        </div>
+
+        <!-- Past Sessions Selector -->
+        <div id="past-sessions-section" class="past-sessions-section">
+          <div class="section-title">Історія останніх сесій</div>
+          <select id="session-selector" class="session-select"></select>
+        </div>
+
+        <!-- Settings Card -->
+        <div class="settings-card">
+          <div class="section-title">Налаштування</div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <span class="setting-name">Демо-режим (🧪 Демо)</span>
+              <span class="setting-desc">Відображати тестові кнопки запуску 9 віртуальних учнів</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-demo-setting">
+              <span class="slider round"></span>
+            </label>
+          </div>
         </div>
       </div>
     </main>

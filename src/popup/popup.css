@@ -5,7 +5,7 @@
 }
 
 body {
-  width: 360px;
+  width: 380px;
   background-color: #202124;
   color: #e8eaed;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -371,3 +371,224 @@ input:checked + .slider:before {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Tabs Navigation */
+.popup-tabs {
+  display: flex;
+  background-color: #282a2d;
+  border-bottom: 1px solid #3c4043;
+  padding: 0 8px;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: #9aa0a6;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.tab-btn:hover {
+  color: #e8eaed;
+}
+
+.tab-btn.active {
+  color: #8ab4f8;
+  border-bottom-color: #8ab4f8;
+}
+
+.tab-pane {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tab-pane.active {
+  display: flex;
+}
+
+/* Roster Management Styles */
+.roster-form-card {
+  background-color: #282a2d;
+  border: 1px solid #3c4043;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8eaed;
+  margin-bottom: 2px;
+}
+
+.form-row {
+  display: flex;
+  width: 100%;
+}
+
+.roster-input, .roster-search-input {
+  width: 100%;
+  background-color: #1e1f21;
+  border: 1px solid #3c4043;
+  border-radius: 6px;
+  color: #ffffff;
+  padding: 7px 10px;
+  font-size: 12px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.roster-input:focus, .roster-search-input:focus {
+  border-color: #8ab4f8;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  height: auto;
+}
+
+.roster-filter-row {
+  display: flex;
+  width: 100%;
+}
+
+.roster-list-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100px;
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.roster-empty {
+  text-align: center;
+  padding: 24px 12px;
+  color: #9aa0a6;
+  font-size: 12px;
+  background-color: #282a2d;
+  border: 1px dashed #3c4043;
+  border-radius: 8px;
+}
+
+.roster-items-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.roster-item {
+  background-color: #282a2d;
+  border: 1px solid #3c4043;
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: border-color 0.15s ease;
+}
+
+.roster-item:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.roster-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.roster-student-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #8ab4f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roster-orig-name {
+  font-size: 11px;
+  color: #9aa0a6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roster-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.roster-icon-btn {
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: #bdc1c6;
+  transition: all 0.15s ease;
+}
+
+.roster-icon-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.roster-icon-btn.delete:hover {
+  background-color: rgba(242, 139, 130, 0.2);
+  color: #f28b82;
+}
+
+.roster-toolbar {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.btn-tool {
+  flex: 1;
+  background-color: #282a2d;
+  border: 1px solid #3c4043;
+  color: #bdc1c6;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.btn-tool:hover {
+  background-color: #3c4043;
+  color: #ffffff;
+  border-color: #5f6368;
+}
+
