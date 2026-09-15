@@ -25,6 +25,9 @@ export interface ScreenShare {
 
   /** The Unpin button element if currently pinned */
   unpinButton?: HTMLButtonElement | null;
+
+  /** Whether the tile is currently present in the active DOM */
+  isAvailableInDom?: boolean;
 }
 
 /**
