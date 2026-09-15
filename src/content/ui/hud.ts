@@ -1,6 +1,7 @@
 import { ScreenShare } from '../../types';
 import { PinController } from '../pin-controller';
 import { DraggableHud } from './drag-drop';
+import { AliasManager } from '../alias-manager';
 import hudStyles from './styles.css?inline';
 
 export class SwitcherHud {
@@ -14,9 +15,13 @@ export class SwitcherHud {
   private toggleBtn!: HTMLButtonElement;
   private isCollapsed = false;
   private currentShares: ScreenShare[] = [];
+  private aliasManager: AliasManager;
+  private editingShareId: string | null = null;
 
   constructor(controller: PinController) {
     this.controller = controller;
+    this.aliasManager = AliasManager.getInstance();
+    this.aliasManager.onUpdate(() => this.renderList());
 
     // 1. Create host element
     this.host = document.createElement('meet-switcher-host');
@@ -276,23 +281,94 @@ export class SwitcherHud {
     for (const share of this.currentShares) {
       const li = document.createElement('li');
       li.className = `screen-item ${share.isPinned ? 'pinned' : ''}`;
+      const isEditing = this.editingShareId === share.id;
+      const alias = this.aliasManager.getAlias(share.participantName);
+      const displayName = this.aliasManager.formatDisplayName(share.participantName);
+
       li.title = share.isPinned
         ? `Активний. Натисніть, щоб ВІДКРІПИТИ (Alt + 0)`
-        : `Закріпити екран: ${share.participantName} (Alt + ${share.index})`;
+        : `Закріпити екран: ${displayName} (Alt + ${share.index})`;
 
-      li.innerHTML = `
-        <div class="screen-info">
-          <span class="screen-number">${share.index}</span>
-          <span class="screen-name">${this.escapeHtml(share.participantName)}</span>
-        </div>
-        <div class="screen-status">
-          ${share.isPinned ? '📌' : '🖥️'}
-        </div>
-      `;
+      if (isEditing) {
+        li.innerHTML = `
+          <div class="screen-info">
+            <span class="screen-number">${share.index}</span>
+            <div class="inline-edit-wrap">
+              <input class="rename-input" type="text" value="${this.escapeHtml(alias || '')}" placeholder="Ім'я учня...">
+              <button class="rename-action-btn save-btn" title="Зберегти (Enter)">✓</button>
+              <button class="rename-action-btn cancel-btn" title="Скасувати (Esc)">✕</button>
+            </div>
+          </div>
+        `;
 
-      li.addEventListener('click', () => {
-        this.controller.switchToShare(share);
-      });
+        const input = li.querySelector<HTMLInputElement>('.rename-input')!;
+        const saveBtn = li.querySelector<HTMLButtonElement>('.save-btn')!;
+        const cancelBtn = li.querySelector<HTMLButtonElement>('.cancel-btn')!;
+
+        const save = async () => {
+          const val = input.value.trim();
+          this.editingShareId = null;
+          await this.aliasManager.setAlias(share.participantName, val);
+          this.renderList();
+        };
+
+        const cancel = () => {
+          this.editingShareId = null;
+          this.renderList();
+        };
+
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') {
+            save();
+          } else if (e.key === 'Escape') {
+            cancel();
+          }
+        });
+
+        saveBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          save();
+        });
+
+        cancelBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          cancel();
+        });
+
+        setTimeout(() => {
+          input.focus();
+          input.select();
+        }, 10);
+      } else {
+        li.innerHTML = `
+          <div class="screen-info">
+            <span class="screen-number">${share.index}</span>
+            <div class="screen-name-wrap">
+              <span class="screen-name" title="${this.escapeHtml(displayName)}">${this.escapeHtml(displayName)}</span>
+              ${alias ? '<span class="alias-tag" title="Встановлено псевдонім">🏷️</span>' : ''}
+              <button class="btn-rename" title="Перейменувати учня (встановити псевдонім)">✏️</button>
+            </div>
+          </div>
+          <div class="screen-status">
+            ${share.isPinned ? '📌' : '🖥️'}
+          </div>
+        `;
+
+        const renameBtn = li.querySelector<HTMLButtonElement>('.btn-rename');
+        if (renameBtn) {
+          renameBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.editingShareId = share.id;
+            this.renderList();
+          });
+        }
+
+        li.addEventListener('click', () => {
+          this.controller.switchToShare(share);
+        });
+      }
 
       ul.appendChild(li);
     }
