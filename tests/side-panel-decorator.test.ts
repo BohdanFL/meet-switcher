@@ -184,5 +184,48 @@ test('SidePanelDecorator rewrites presentation row name into combined format wit
 
   assert.equal(nameSpan.getAttribute('data-ms-original'), 'Bohdan Rubakha');
   assert.equal(nameSpan.innerHTML.includes('Бодя'), true);
-  assert.equal(nameSpan.innerHTML.includes('презентація'), true);
+  assert.equal(nameSpan.innerHTML.includes('Bohdan Rubakha'), true);
 });
+
+test('SidePanelDecorator specifically targets span.zWGUib and ignores icon inside avatar (user DOM)', async () => {
+  const aliasManager = new AliasManager({ enableStorageSync: false });
+  await aliasManager.setAlias('Bohdan Rubakha', 'Богдан');
+
+  const decorator = new SidePanelDecorator(aliasManager);
+
+  const row = new MockElement('div');
+  row.setAttribute('role', 'listitem');
+  row.setAttribute('aria-label', 'Bohdan Rubakha');
+
+  const avatar = new MockElement('div');
+  avatar.className = 'BEaVse';
+  const extHU = new MockElement('div');
+  extHU.className = 'extHU';
+  const icon = new MockElement('i', 'devices');
+  icon.className = 'google-symbols notranslate';
+  extHU.appendChild(icon);
+  avatar.appendChild(extHU);
+  row.appendChild(avatar);
+
+  const textContainer = new MockElement('div');
+  textContainer.className = 'zSX24d';
+  const jKwXVe = new MockElement('div');
+  jKwXVe.className = 'jKwXVe';
+  const nameSpan = new MockElement('span', 'Bohdan Rubakha');
+  nameSpan.className = 'zWGUib';
+  jKwXVe.appendChild(nameSpan);
+  textContainer.appendChild(jKwXVe);
+  row.appendChild(textContainer);
+
+  decorator.decorateRow(row as any);
+
+  // Icon must NOT be modified
+  assert.equal(icon.hasAttribute('data-ms-original'), false, 'Icon must not have data-ms-original');
+  assert.equal(icon.textContent, 'devices');
+
+  // Name span MUST be modified
+  assert.equal(nameSpan.getAttribute('data-ms-original'), 'Bohdan Rubakha');
+  assert.equal(nameSpan.innerHTML.includes('Богдан'), true);
+  assert.equal(nameSpan.innerHTML.includes('Bohdan Rubakha'), true);
+});
+

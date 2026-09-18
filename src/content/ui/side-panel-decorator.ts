@@ -34,7 +34,7 @@ export class SidePanelDecorator {
         }
         this.debounceTimer = window.setTimeout(() => {
           this.update(doc);
-        }, 100);
+        }, 80);
       });
 
       this.observer.observe(doc.body, {
@@ -96,15 +96,66 @@ export class SidePanelDecorator {
     return Array.from(detectedRows);
   }
 
+  /**
+   * Accurately finds the real name text element inside a Google Meet People panel row.
+   * Strictly avoids icon tags (<i>), avatar containers (.BEaVse, .extHU), and action buttons.
+   */
+  public findNameElement(row: HTMLElement): HTMLElement | null {
+    if (!row || typeof row.querySelector !== 'function') return null;
+
+    const isIconElement = (el: HTMLElement): boolean => {
+      if (el.tagName === 'I') return true;
+      const cls = typeof el.className === 'string' ? el.className : '';
+      return (
+        cls.includes('google-symbols') ||
+        cls.includes('google-material-icons') ||
+        cls.includes('material-icons')
+      );
+    };
+
+    // 1. Google Meet standard name element in People panel: <span class="zWGUib">
+    const zwguib = row.querySelector<HTMLElement>('span.zWGUib, .jKwXVe span.zWGUib, .zSX24d .jKwXVe span');
+    if (zwguib && !isIconElement(zwguib)) return zwguib;
+
+    // 2. Search inside the text container .zSX24d
+    const container = row.querySelector<HTMLElement>('.zSX24d, .jKwXVe');
+    if (container) {
+      const textSpan = container.querySelector<HTMLElement>('span');
+      if (textSpan && !isIconElement(textSpan)) {
+        return textSpan;
+      }
+    }
+
+    // 3. Fallback: Search all candidate spans while strictly excluding icons and avatar
+    const candidates = Array.from(
+      row.querySelectorAll<HTMLElement>('.zSX24d span, span.notranslate, span[title], span')
+    );
+    for (const el of candidates) {
+      if (
+        isIconElement(el) ||
+        (el.closest && el.closest('.BEaVse, .extHU, .Q2qrwf'))
+      ) {
+        continue;
+      }
+      const txt = (el.textContent || '').trim();
+      if (
+        txt &&
+        txt !== 'Presentation' &&
+        !txt.startsWith('more_vert') &&
+        !txt.startsWith('devices') &&
+        !txt.startsWith('Mute')
+      ) {
+        return el;
+      }
+    }
+
+    return null;
+  }
+
   public extractParticipantInfo(row: HTMLElement): ParticipantRowInfo | null {
     if (!row || typeof row.querySelectorAll !== 'function') return null;
 
-    // First check if nameEl already has stored data-ms-original
-    const nameEl =
-      row.querySelector<HTMLElement>('.notranslate') ||
-      row.querySelector<HTMLElement>('span[title], div[title]') ||
-      row.querySelector<HTMLElement>('span');
-
+    const nameEl = this.findNameElement(row);
     if (nameEl && nameEl.getAttribute('data-ms-original')) {
       const stored = nameEl.getAttribute('data-ms-original')!;
       const rowText = (row.textContent || '') + ' ' + (row.getAttribute('aria-label') || '');
@@ -157,37 +208,9 @@ export class SidePanelDecorator {
       }
     }
 
-    // 2. Check .notranslate elements inside row
+    // 2. Check name element inside row (.zWGUib)
     if (!rawName && nameEl && nameEl.textContent) {
       rawName = nameEl.textContent;
-    }
-
-    // 3. Fallback: Parse inner text of row excluding buttons
-    if (!rawName) {
-      const clone = typeof row.cloneNode === 'function' ? (row.cloneNode(true) as HTMLElement) : null;
-      if (clone && typeof clone.querySelectorAll === 'function') {
-        clone.querySelectorAll('button, [role="button"], i, svg').forEach((el) => el.remove?.());
-        const text = (clone.textContent || '').trim();
-        if (text) {
-          const cleaned = text
-            .replace(/\s*\((?:You|Ви|Вы)\)/i, '')
-            .replace(/\s*(?:Meeting host|Організатор зустрічі|Организатор встречи)/i, '')
-            .split('\n')[0]
-            .trim();
-          if (cleaned) {
-            rawName = cleaned;
-          }
-        }
-      } else {
-        const text = (row.textContent || '').trim();
-        if (text) {
-          rawName = text
-            .replace(/\s*\((?:You|Ви|Вы)\)/i, '')
-            .replace(/\s*(?:Meeting host|Організатор зустрічі|Организатор встречи)/i, '')
-            .split('\n')[0]
-            .trim();
-        }
-      }
     }
 
     if (!rawName) return null;
@@ -223,18 +246,20 @@ export class SidePanelDecorator {
   }
 
   public decorateRow(row: HTMLElement): void {
-    const info = this.extractParticipantInfo(row);
-    if (!info || !info.name) return;
-
-    // Clean up any legacy badge elements from previous versions
+    // 1. Clean up any accidental past injections on icons or avatar tags
+    const badIcons = row.querySelectorAll('i[data-ms-original], i.google-symbols[data-ms-formatted], .extHU i');
+    for (const bad of Array.from(badIcons)) {
+      bad.removeAttribute('data-ms-original');
+      bad.removeAttribute('data-ms-formatted');
+      (bad as HTMLElement).title = '';
+    }
     row.querySelector(`.${SIDE_PANEL_BADGE_CLASS}`)?.remove();
     row.querySelector(`.${SIDE_PANEL_ADD_BTN_CLASS}`)?.remove();
 
-    const nameEl =
-      row.querySelector<HTMLElement>('.notranslate') ||
-      row.querySelector<HTMLElement>('span[title], div[title]') ||
-      row.querySelector<HTMLElement>('span');
+    const info = this.extractParticipantInfo(row);
+    if (!info || !info.name) return;
 
+    const nameEl = this.findNameElement(row);
     if (!nameEl) return;
 
     const originalName = nameEl.getAttribute('data-ms-original') || info.name;
@@ -243,16 +268,11 @@ export class SidePanelDecorator {
     if (alias) {
       nameEl.setAttribute('data-ms-original', originalName);
 
-      const combinedText = info.isPresentation
-        ? `${alias} (${originalName}) (презентація)`
-        : `${alias} (${originalName})`;
+      const combinedText = `${alias} (${originalName})`;
 
       if (nameEl.getAttribute('data-ms-formatted') !== combinedText) {
         nameEl.setAttribute('data-ms-formatted', combinedText);
-        nameEl.innerHTML = info.isPresentation
-          ? `<span class="ms-alias-name" style="font-weight: 500;">${this.escapeHtml(alias)}</span> <span class="ms-original-name" style="opacity: 0.72; font-weight: normal;">(${this.escapeHtml(originalName)})</span> <span class="ms-pres-tag" style="opacity: 0.6; font-size: 0.9em;">(презентація)</span>`
-          : `<span class="ms-alias-name" style="font-weight: 500;">${this.escapeHtml(alias)}</span> <span class="ms-original-name" style="opacity: 0.72; font-weight: normal;">(${this.escapeHtml(originalName)})</span>`;
-
+        nameEl.innerHTML = `<span class="ms-alias-name" style="font-weight: 500;">${this.escapeHtml(alias)}</span> <span class="ms-original-name" style="opacity: 0.72; font-weight: normal;">(${this.escapeHtml(originalName)})</span>`;
         nameEl.title = `MeetSwitcher: Псевдонім "${alias}" для "${originalName}". Натисніть двічі, щоб змінити.`;
 
         // Double click allows quick alias editing
@@ -283,6 +303,11 @@ export class SidePanelDecorator {
     if (typeof document === 'undefined') return;
     const modifiedElements = document.querySelectorAll<HTMLElement>('[data-ms-original]');
     modifiedElements.forEach((el) => {
+      if (el.tagName === 'I') {
+        el.removeAttribute('data-ms-original');
+        el.removeAttribute('data-ms-formatted');
+        return;
+      }
       const orig = el.getAttribute('data-ms-original');
       if (orig) {
         el.textContent = orig;

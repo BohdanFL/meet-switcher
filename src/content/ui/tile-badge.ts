@@ -10,6 +10,45 @@ export class TileBadgeDecorator {
     this.aliasManager = aliasManager || AliasManager.getInstance();
   }
 
+  public findTileNameElement(tile: HTMLElement): HTMLElement | null {
+    if (!tile || typeof tile.querySelector !== 'function') return null;
+
+    const isIconElement = (el: HTMLElement): boolean => {
+      if (el.tagName === 'I') return true;
+      const cls = typeof el.className === 'string' ? el.className : '';
+      return (
+        cls.includes('google-symbols') ||
+        cls.includes('google-material-icons') ||
+        cls.includes('material-icons')
+      );
+    };
+
+    // 1. Google Meet standard name element in video tile: span.zWGUib
+    const zwguib = tile.querySelector<HTMLElement>('span.zWGUib, div.zWGUib');
+    if (zwguib && !isIconElement(zwguib)) return zwguib;
+
+    // 2. Search candidates but strictly exclude <i> and material icons
+    if (typeof tile.querySelectorAll === 'function') {
+      const candidates = Array.from(
+        tile.querySelectorAll<HTMLElement>('.notranslate, [data-self-name], span[title]')
+      );
+      for (const el of candidates) {
+        if (isIconElement(el)) {
+          continue;
+        }
+        const text = (el.textContent || '').trim();
+        if (text && text.length > 1) {
+          return el;
+        }
+      }
+    } else {
+      const fallback = tile.querySelector<HTMLElement>('.notranslate, [data-self-name], span[title]');
+      if (fallback && !isIconElement(fallback)) return fallback;
+    }
+
+    return null;
+  }
+
   public updateTile(share: ScreenShare): void {
     if (!share.tileElement || typeof share.tileElement.querySelector !== 'function') {
       return;
@@ -17,10 +56,18 @@ export class TileBadgeDecorator {
 
     const alias = this.aliasManager.getAlias(share.participantName);
 
+    // Clean up any accidental past injections on icon tags
+    if (typeof share.tileElement.querySelectorAll === 'function') {
+      const badIcons = share.tileElement.querySelectorAll('i[data-ms-original], i.google-symbols[data-ms-formatted]');
+      for (const bad of Array.from(badIcons)) {
+        bad.removeAttribute('data-ms-original');
+        bad.removeAttribute('data-ms-formatted');
+        (bad as HTMLElement).title = '';
+      }
+    }
+
     // Locate Google Meet's native name container inside the tile
-    const nameEl =
-      share.tileElement.querySelector<HTMLElement>('.notranslate, [data-self-name], span.zWGUib') ||
-      share.tileElement.querySelector<HTMLElement>('div.notranslate, span[title]');
+    const nameEl = this.findTileNameElement(share.tileElement);
 
     if (nameEl) {
       // Remove any legacy floating badge
@@ -41,6 +88,7 @@ export class TileBadgeDecorator {
         nameEl.textContent = originalName;
         nameEl.removeAttribute('data-ms-original');
         nameEl.removeAttribute('data-ms-formatted');
+        nameEl.title = originalName;
       }
       return;
     }
@@ -81,6 +129,11 @@ export class TileBadgeDecorator {
 
       const modified = document.querySelectorAll<HTMLElement>('[data-ms-original]');
       modified.forEach((el) => {
+        if (el.tagName === 'I') {
+          el.removeAttribute('data-ms-original');
+          el.removeAttribute('data-ms-formatted');
+          return;
+        }
         const orig = el.getAttribute('data-ms-original');
         if (orig) el.textContent = orig;
         el.removeAttribute('data-ms-original');
