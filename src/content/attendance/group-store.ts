@@ -2,6 +2,7 @@ import {
   type StudentGroup,
   type StudentGroupMap,
   STORAGE_KEY_LMS_GROUPS,
+  extractFirstName,
 } from '../../types/attendance.ts';
 import {
   STORAGE_KEY_GROUPS,
@@ -267,7 +268,7 @@ export class GroupStore {
       for (const s of group.students) {
         const origName = (s.meetOriginalName || s.fullName).trim();
         const key = origName.toLowerCase();
-        const studentAlias = s.shortAlias || s.fullName.split(' ')[0] || s.fullName;
+        const studentAlias = s.shortAlias || extractFirstName(s.fullName);
 
         if (!currentAliases[key]) {
           currentAliases[key] = {
@@ -278,10 +279,21 @@ export class GroupStore {
             updatedAt: Date.now(),
           };
           changed = true;
-        } else if (currentAliases[key].group !== group.name) {
-          currentAliases[key].group = group.name;
-          currentAliases[key].updatedAt = Date.now();
-          changed = true;
+        } else {
+          // If alias was previously set to surname (first word) or empty, correct it to the first name
+          const firstWord = s.fullName.trim().split(/\s+/)[0]?.toLowerCase();
+          const currentAliasVal = currentAliases[key].alias?.trim().toLowerCase();
+          if (!currentAliases[key].alias || currentAliasVal === firstWord) {
+            currentAliases[key].alias = studentAlias;
+            changed = true;
+          }
+          if (currentAliases[key].group !== group.name) {
+            currentAliases[key].group = group.name;
+            changed = true;
+          }
+          if (changed) {
+            currentAliases[key].updatedAt = Date.now();
+          }
         }
       }
 

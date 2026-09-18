@@ -38,3 +38,18 @@ export interface StudentGroup {
 export type StudentGroupMap = Record<string, StudentGroup>;
 
 export const STORAGE_KEY_LMS_GROUPS = 'meet_switcher_lms_groups';
+
+/**
+ * In Ukrainian LMS, names are formatted as: [Прізвище] [Ім'я] (e.g. "Альфелді Камалія", "Мисюк Павло").
+ * The 1st word is the surname (прізвище).
+ * The 2nd word is the first name (ім'я).
+ * This helper returns the student's first name (ім'я) for aliases and HUD display.
+ */
+export function extractFirstName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length > 1) {
+    return parts[1];
+  }
+  return parts[0] || fullName;
+}
+

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseLmsGroupPage } from '../src/lms/parser.ts';
+import { extractFirstName } from '../src/types/attendance.ts';
 
 test('parseLmsGroupPage extracts group name, id, and students from user DOM snippet', () => {
   // Simulating user snippet:
@@ -62,9 +63,11 @@ test('parseLmsGroupPage extracts group name, id, and students from user DOM snip
   assert.equal(group.students.length, 2);
   assert.equal(group.students[0].id, '6753930');
   assert.equal(group.students[0].fullName, 'Альфелді Камалія');
+  assert.equal(group.students[0].shortAlias, 'Камалія');
   assert.equal(group.students[0].lmsUrl, 'https://lms.alg.academy/student/update/6753930');
   assert.equal(group.students[1].id, '6753283');
   assert.equal(group.students[1].fullName, 'Воронченко Віра');
+  assert.equal(group.students[1].shortAlias, 'Віра');
 });
 
 test('parseLmsGroupPage handles missing elements gracefully', () => {
@@ -253,5 +256,15 @@ test('parseLmsGroupPage filters out transferred student matching exact user snip
   assert.equal(group.students.length, 1);
   assert.equal(group.students[0].id, '9999999');
   assert.equal(group.students[0].fullName, 'Активний Учень');
+  assert.equal(group.students[0].shortAlias, 'Учень');
 });
+
+test('extractFirstName extracts second word as first name, handles single and multi-word names', () => {
+  assert.equal(extractFirstName('Альфелді Камалія'), 'Камалія');
+  assert.equal(extractFirstName('Мисюк Павло'), 'Павло');
+  assert.equal(extractFirstName('Воронченко Віра'), 'Віра');
+  assert.equal(extractFirstName('Петренко Олександр Іванович'), 'Олександр');
+  assert.equal(extractFirstName('Максим'), 'Максим');
+});
+
 

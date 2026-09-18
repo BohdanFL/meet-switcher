@@ -182,6 +182,43 @@ test('GroupStore syncs imported groups and student aliases to meet_switcher_stud
   }
 });
 
+test('GroupStore syncToAliasesAndGroups uses extractFirstName (2nd word) when shortAlias is omitted', async () => {
+  const fakeStorage: Record<string, any> = {};
+  (globalThis as any).chrome = {
+    storage: {
+      sync: {
+        get: async (key: string) => ({ [key]: fakeStorage[key] }),
+        set: async (obj: Record<string, any>) => Object.assign(fakeStorage, obj),
+      },
+    },
+  };
+
+  try {
+    const store = new GroupStore({ enableStorageSync: true });
+    await store.saveGroup({
+      id: '2595601',
+      name: 'УКР_Гейм_ЧТ_19:00',
+      lmsUrl: 'https://lms.alg.academy/group/view/2595601',
+      updatedAt: 1000,
+      students: [
+        {
+          id: '6753930',
+          fullName: 'Альфелді Камалія',
+          lmsUrl: 'https://lms.alg.academy/student/update/6753930',
+        },
+      ],
+    });
+
+    assert.ok(fakeStorage['meet_switcher_student_aliases']);
+    const aliasEntry = fakeStorage['meet_switcher_student_aliases']['альфелді камалія'];
+    assert.ok(aliasEntry);
+    // MUST BE "Камалія" (first name), NOT "Альфелді" (surname)!
+    assert.equal(aliasEntry.alias, 'Камалія');
+  } finally {
+    delete (globalThis as any).chrome;
+  }
+});
+
 test('GroupStore removeStudent removes student from group and updates storage', async () => {
   const fakeStorage: Record<string, any> = {};
   (globalThis as any).chrome = {

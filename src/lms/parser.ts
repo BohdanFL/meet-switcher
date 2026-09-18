@@ -1,4 +1,4 @@
-import type { StudentGroup, GroupStudent } from '../types/attendance.ts';
+import { extractFirstName, type StudentGroup, type GroupStudent } from '../types/attendance.ts';
 
 export function parseLmsGroupPage(doc: ParentNode, pageUrl: string): StudentGroup | null {
   // 1. Extract Group ID from URL or #group-view[data-id]
@@ -124,7 +124,8 @@ export function parseLmsGroupPage(doc: ParentNode, pageUrl: string): StudentGrou
 
     seenIds.add(studentId);
 
-    const fullName = link.textContent?.trim() || `Учень ${studentId}`;
+    const fullName = (link.textContent || '').trim().replace(/\s+/g, ' ') || `Учень ${studentId}`;
+    const shortAlias = extractFirstName(fullName);
     const lmsUrl = href.startsWith('http')
       ? href
       : `https://lms.alg.academy/student/update/${studentId}`;
@@ -132,6 +133,7 @@ export function parseLmsGroupPage(doc: ParentNode, pageUrl: string): StudentGrou
     students.push({
       id: studentId,
       fullName,
+      shortAlias,
       lmsUrl,
     });
   }
