@@ -267,4 +267,60 @@ test('extractFirstName extracts second word as first name, handles single and mu
   assert.equal(extractFirstName('Максим'), 'Максим');
 });
 
+test('parseLmsGroupPage does not filter active students who have "Перекласти" or "Відрахувати" in dropdown action menu', () => {
+  // Real LMS structure for active student:
+  // Status column contains button with "зарахований {date}" AND dropdown menu with "Перекласти" / "Відрахувати"
+  const successBtn = {
+    className: 'el-button el-button--success el-button--micro',
+    classList: { contains: (c: string) => c === 'el-button' || c === 'el-button--success' },
+    textContent: 'зарахований 01.09.2026',
+  };
+
+  const statusCol = {
+    className: 'GroupStudent__col GroupStudent__col__status',
+    classList: { contains: () => false },
+    textContent: 'зарахований 01.09.2026 Перекласти Відрахувати',
+    querySelector: (sel: string) => {
+      if (sel.includes('.el-button-group') || sel.includes('button')) return successBtn;
+      return null;
+    },
+  };
+
+  const studentRow = {
+    className: 'Expandable GroupStudent__item',
+    classList: { contains: (c: string) => c === 'GroupStudent__item' },
+    querySelector: (sel: string) => (sel.includes('status') ? statusCol : null),
+  };
+
+  const studentLink = {
+    getAttribute: (k: string) => (k === 'href' ? '/student/update/6753930' : null),
+    textContent: 'Альфелді Камалія',
+    closest: (sel: string) => {
+      if (sel.includes('is-inactive')) return null;
+      if (sel.includes('GroupStudent__item')) return studentRow;
+      return null;
+    },
+  };
+
+  const gridEl = {
+    querySelectorAll: () => [studentLink],
+  };
+
+  const mockDoc = {
+    querySelector: (sel: string) => {
+      if (sel.includes('group-student-grid')) return gridEl;
+      if (sel.includes('GroupCard__header__title')) return { textContent: 'УКР_Гейм_ЧТ_19:00' };
+      if (sel.includes('group-view')) return { getAttribute: () => '2595601' };
+      return null;
+    },
+  } as any;
+
+  const group = parseLmsGroupPage(mockDoc, 'https://lms.alg.academy/group/view/2595601#group-student-grid');
+  assert.ok(group);
+  assert.equal(group.students.length, 1);
+  assert.equal(group.students[0].id, '6753930');
+  assert.equal(group.students[0].fullName, 'Альфелді Камалія');
+  assert.equal(group.students[0].shortAlias, 'Камалія');
+});
+
 

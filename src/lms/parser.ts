@@ -42,72 +42,86 @@ export function parseLmsGroupPage(doc: ParentNode, pageUrl: string): StudentGrou
     if (seenIds.has(studentId)) continue;
 
     // Filter out inactive / transferred / expelled students
-    // 1. Direct closest checks on link
+    // 1. Direct is-inactive class on student item container or ancestors
+    const item =
+      link.closest?.('.GroupStudent__item, .Expandable, tr') ||
+      link.closest?.('.GroupStudent__row') ||
+      link.parentElement;
+
     if (
-      link.closest?.('.is-inactive, [class*="inactive"]') ||
-      Boolean(link.closest?.('.is-inactive'))
+      link.closest?.('.is-inactive') ||
+      item?.classList?.contains('is-inactive') ||
+      item?.closest?.('.is-inactive')
     ) {
       continue;
     }
 
-    // 2. Full ancestor traversal checking any element containing 'inactive' class
-    let isInactive = false;
-    let curr: Element | null = link.parentElement;
-    while (curr) {
-      const cls = curr.className;
-      if (
-        curr.classList?.contains('is-inactive') ||
-        (typeof cls === 'string' && cls.includes('is-inactive'))
-      ) {
-        isInactive = true;
-        break;
-      }
-      if (curr.id === 'group-student-grid' || curr.id === 'group-view') {
-        break;
-      }
-      curr = curr.parentElement;
-    }
-    if (isInactive) {
-      continue;
-    }
+    // 2. Check status column if present
+    const statusCol = item?.querySelector?.(
+      '.GroupStudent__col__status, .GroupStudent__status, .student-status'
+    );
 
-    // 3. Check row container and status column
-    const row =
-      link.closest?.('.GroupStudent__item, .Expandable, .GroupStudent__row, tr') ||
-      link.parentElement;
-
-    if (row) {
-      const rowCls = row.className;
+    if (statusCol) {
       if (
-        row.classList?.contains('is-inactive') ||
-        (typeof rowCls === 'string' && rowCls.includes('is-inactive'))
+        statusCol.classList?.contains('is-inactive') ||
+        statusCol.closest?.('.is-inactive')
       ) {
         continue;
       }
 
-      // Check status element inside row
-      const statusEl = row.querySelector?.(
-        '.GroupStudent__col__status, .GroupStudent__status, .student-status'
+      // Check the primary status button (inside .el-button-group or direct button)
+      // IMPORTANT: Exclude .el-dropdown-menu and .el-dropdown__caret-button!
+      // The dropdown menu contains ACTION buttons like "Перекласти" and "Відрахувати",
+      // which must NEVER be mistaken for the student's current status.
+      const statusBtn = statusCol.querySelector?.(
+        '.el-button-group > .el-button:not(.el-dropdown__caret-button), button.el-button:not(.el-dropdown__caret-button)'
       );
 
-      if (statusEl) {
-        const statusCls = statusEl.className;
+      if (statusBtn) {
+        const btnClass = statusBtn.className || '';
+        // Element-UI status color: warning (transferred), danger (expelled), info (inactive/archived)
         if (
-          statusEl.classList?.contains('is-inactive') ||
-          (typeof statusCls === 'string' && statusCls.includes('is-inactive')) ||
-          Boolean(statusEl.closest?.('.is-inactive'))
+          statusBtn.classList?.contains('el-button--warning') ||
+          statusBtn.classList?.contains('el-button--danger') ||
+          statusBtn.classList?.contains('el-button--info') ||
+          btnClass.includes('el-button--warning') ||
+          btnClass.includes('el-button--danger') ||
+          btnClass.includes('el-button--info')
         ) {
           continue;
         }
 
-        // Element-UI warning / danger button check (transferred, expelled, etc.)
-        if (statusEl.querySelector?.('.el-button--warning, .el-button--danger, .el-button--info')) {
+        const btnText = statusBtn.textContent?.trim().toLowerCase() || '';
+        const isExplicitlyInactive =
+          btnText.includes('перекладен') ||
+          btnText.includes('переведен') ||
+          btnText.includes('відрах') ||
+          btnText.includes('отчисл') ||
+          btnText.includes('неактивн') ||
+          btnText.includes('заморожен') ||
+          btnText.includes('архів') ||
+          btnText.includes('архив') ||
+          btnText.includes('відхилен') ||
+          btnText.includes('пауз') ||
+          btnText.includes('transfer') ||
+          btnText.includes('expell') ||
+          btnText.includes('inactive');
+
+        if (isExplicitlyInactive) {
           continue;
         }
+      } else {
+        // Fallback: If no button found, check status column text EXCLUDING dropdown menu
+        const dropdownMenu = statusCol.querySelector?.('.el-dropdown-menu');
+        const statusText = (dropdownMenu
+          ? Array.from(statusCol.childNodes || [])
+              .filter((n: any) => n !== dropdownMenu && !n.classList?.contains('el-dropdown-menu'))
+              .map((n: any) => n.textContent || '')
+              .join(' ')
+          : statusCol.textContent || ''
+        ).trim().toLowerCase();
 
-        const statusText = statusEl.textContent?.trim().toLowerCase() || '';
         if (statusText) {
-          // Negative / inactive keywords in Ukrainian, Russian, and English
           const isExplicitlyInactive =
             statusText.includes('перекладен') ||
             statusText.includes('переведен') ||
@@ -115,10 +129,6 @@ export function parseLmsGroupPage(doc: ParentNode, pageUrl: string): StudentGrou
             statusText.includes('отчисл') ||
             statusText.includes('неактивн') ||
             statusText.includes('заморожен') ||
-            statusText.includes('архів') ||
-            statusText.includes('архив') ||
-            statusText.includes('відхилен') ||
-            statusText.includes('пауз') ||
             statusText.includes('transfer') ||
             statusText.includes('expell') ||
             statusText.includes('inactive');
