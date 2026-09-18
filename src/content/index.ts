@@ -18,6 +18,8 @@ declare global {
       download: () => void;
       getSession: () => any;
     };
+    testPeoplePanel?: () => void;
+    testPinParticipant?: (name: string) => Promise<boolean>;
   }
 }
 
@@ -42,6 +44,42 @@ function initMeetSwitcher(): void {
   const animKiller = new AnimationKiller();
   const detector = new ScreenDetector();
   const controller = new PinController(detector, animKiller);
+
+  // Expose convenient test utilities directly on window
+  window.testPeoplePanel = () => {
+    console.log('=== [MeetSwitcher: People Panel Inspection] ===');
+    const isOpen = controller.isPeoplePanelOpen();
+    console.log('1. Панель відкрита:', isOpen ? 'ТАК ✅' : 'НІ ❌');
+
+    const panel = document.querySelector(
+      'div[role="tabpanel"], div[aria-label*="People" i], div[aria-label*="учасник" i], div[aria-label*="люди" i], aside'
+    );
+    if (!panel) {
+      console.warn('Панель не знайдена в DOM. Відкрийте бічну панель "Учасники".');
+      return;
+    }
+
+    const rows = Array.from(
+      panel.querySelectorAll('div[role="listitem"], li[role="listitem"], div[data-participant-id]')
+    );
+    console.log('2. Знайдено рядків у списку:', rows.length);
+
+    rows.forEach((row, i) => {
+      const text = (row.textContent || '').replace(/\s+/g, ' ').trim();
+      const buttons = Array.from(row.querySelectorAll('button, [role="button"]'));
+      const btnInfo = buttons.map((b) => b.getAttribute('aria-label') || b.textContent?.trim() || 'кнопка');
+      const isPres = /presentation|презентац|present_to_all|трансляц/i.test(text + ' ' + btnInfo.join(' '));
+      console.log('Рядок ' + (i + 1) + (isPres ? ' [ПРЕЗЕНТАЦІЯ]: ' : ' [УЧЕНЬ]: ') + text.slice(0, 50));
+      console.log('   Кнопки (' + buttons.length + '):', btnInfo);
+    });
+  };
+
+  window.testPinParticipant = async (name: string) => {
+    console.log('=== [MeetSwitcher: Тестове закріплення]', name, '===');
+    const res = await controller.pinViaPeoplePanel(name);
+    console.log('Результат закріплення для "' + name + '":', res ? 'УСПІШНО ✅' : 'НЕ ВДАЛОСЯ ❌');
+    return res;
+  };
   const hotkeys = new HotkeyManager(controller);
   const aliasManager = AliasManager.getInstance();
   aliasManager.init();

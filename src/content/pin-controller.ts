@@ -771,3 +771,31 @@ export class PinController {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
+
+    (() => {
+      console.log("=== [MeetSwitcher: People Panel Test] ===");
+      const panel = document.querySelector('div[role="tabpanel"], div[aria-label*="People" i],
+  div[aria-label*="учасник" i]');
+      if (!panel) {
+        console.warn("Панель учасників не знайдена! Будь ласка, відкрийте бічну панель у Meet.");
+        return;
+      }
+      console.log("Панель знайдено: ТАК");
+
+      const rows = Array.from(panel.querySelectorAll('div[role="listitem"],
+  li[role="listitem"]'));
+      console.log("Кількість рядків у списку:", rows.length);
+
+      rows.forEach((row, i) => {
+        const text = (row.textContent || "").replace(/\s+/g, " ").trim();
+        const buttons = Array.from(row.querySelectorAll('button, [role="button"]'));
+        const btnInfo = buttons.map(b => b.getAttribute("aria-label") || b.textContent?.trim() ||
+  "кнопка");
+        const isPres = /presentation|презентац|present_to_all|трансляц/i.test(text + " " +
+  btnInfo.join(" "));
+
+        console.log("Рядок " + (i + 1) + (isPres ? " [ПРЕЗЕНТАЦІЯ]: " : " [УЧЕНЬ]: ") + text.
+  slice(0, 45));
+        console.log("   Кнопки (" + buttons.length + "):", btnInfo);
+      });
+    })();
