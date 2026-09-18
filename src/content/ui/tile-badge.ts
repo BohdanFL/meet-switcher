@@ -16,18 +16,44 @@ export class TileBadgeDecorator {
     }
 
     const alias = this.aliasManager.getAlias(share.participantName);
+
+    // Locate Google Meet's native name container inside the tile
+    const nameEl =
+      share.tileElement.querySelector<HTMLElement>('.notranslate, [data-self-name], span.zWGUib') ||
+      share.tileElement.querySelector<HTMLElement>('div.notranslate, span[title]');
+
+    if (nameEl) {
+      // Remove any legacy floating badge
+      share.tileElement.querySelector(`.${BADGE_CLASS}`)?.remove();
+
+      const originalName = nameEl.getAttribute('data-ms-original') || share.participantName;
+
+      if (alias) {
+        nameEl.setAttribute('data-ms-original', originalName);
+        const combinedText = `${alias} (${originalName})`;
+
+        if (nameEl.getAttribute('data-ms-formatted') !== combinedText) {
+          nameEl.setAttribute('data-ms-formatted', combinedText);
+          nameEl.innerHTML = `<span class="ms-alias-name" style="font-weight: 600;">${this.escapeHtml(alias)}</span> <span class="ms-original-name" style="opacity: 0.75; font-weight: normal;">(${this.escapeHtml(originalName)})</span>`;
+          nameEl.title = `MeetSwitcher: Псевдонім "${alias}" для "${originalName}"`;
+        }
+      } else if (nameEl.hasAttribute('data-ms-original')) {
+        nameEl.textContent = originalName;
+        nameEl.removeAttribute('data-ms-original');
+        nameEl.removeAttribute('data-ms-formatted');
+      }
+      return;
+    }
+
+    // Fallback: If native name container is absent (e.g. test mocks), mount minimal badge
     const existingBadge = share.tileElement.querySelector<HTMLElement>(`.${BADGE_CLASS}`);
 
     if (alias) {
-      const displayName = this.aliasManager.formatDisplayName(share.participantName);
-      const badgeText = `🏷️ ${displayName}`;
+      const badgeText = `${alias} (${share.participantName})`;
 
       if (existingBadge) {
         if (existingBadge.textContent !== badgeText) {
           existingBadge.textContent = badgeText;
-        }
-        if (typeof document !== 'undefined' && share.tileElement.appendChild && !share.tileElement.contains(existingBadge)) {
-          share.tileElement.appendChild(existingBadge);
         }
       } else {
         const badge = typeof document !== 'undefined' && typeof document.createElement === 'function'
@@ -35,44 +61,6 @@ export class TileBadgeDecorator {
           : ({ style: {} } as any);
         badge.className = BADGE_CLASS;
         badge.textContent = badgeText;
-        if ('title' in badge) {
-          badge.title = `Псевдонім учня: ${alias} (Акаунт: ${share.participantName})`;
-        }
-
-        // Inline CSS styles to guarantee appearance regardless of Google Meet CSS
-        Object.assign(badge.style, {
-          position: 'absolute',
-          top: '12px',
-          left: '12px',
-          zIndex: '9999',
-          background: 'rgba(15, 17, 23, 0.88)',
-          backdropFilter: 'blur(6px)',
-          WebkitBackdropFilter: 'blur(6px)',
-          color: '#ffffff',
-          padding: '4px 10px',
-          borderRadius: '6px',
-          fontSize: '13px',
-          fontWeight: '500',
-          fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
-          letterSpacing: '0.2px',
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.4)',
-          border: '1px solid rgba(255, 255, 255, 0.18)',
-          pointerEvents: 'none',
-          transition: 'opacity 0.2s ease',
-        });
-
-        // Ensure container is positioned for absolute child
-        try {
-          if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
-            const currentPos = window.getComputedStyle(share.tileElement).position;
-            if (!currentPos || currentPos === 'static') {
-              share.tileElement.style.position = 'relative';
-            }
-          }
-        } catch {
-          // Ignore computed style errors
-        }
-
         share.tileElement.appendChild(badge);
       }
     } else if (existingBadge) {
@@ -90,6 +78,22 @@ export class TileBadgeDecorator {
     if (typeof document !== 'undefined') {
       const badges = document.querySelectorAll(`.${BADGE_CLASS}`);
       badges.forEach((b) => b.remove());
+
+      const modified = document.querySelectorAll<HTMLElement>('[data-ms-original]');
+      modified.forEach((el) => {
+        const orig = el.getAttribute('data-ms-original');
+        if (orig) el.textContent = orig;
+        el.removeAttribute('data-ms-original');
+        el.removeAttribute('data-ms-formatted');
+      });
     }
+  }
+
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 }

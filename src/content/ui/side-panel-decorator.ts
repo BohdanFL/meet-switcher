@@ -2,7 +2,6 @@ import { AliasManager } from '../alias-manager.ts';
 
 export const SIDE_PANEL_BADGE_CLASS = 'meet-switcher-sidepanel-badge';
 export const SIDE_PANEL_ADD_BTN_CLASS = 'meet-switcher-sidepanel-add-btn';
-export const SIDE_PANEL_STYLES_ID = 'meet-switcher-sidepanel-styles';
 
 export interface ParticipantRowInfo {
   name: string;
@@ -20,7 +19,6 @@ export class SidePanelDecorator {
   }
 
   public start(doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): void {
-    this.injectStyles(doc);
     this.update(doc);
 
     // Subscribe to alias changes
@@ -36,7 +34,7 @@ export class SidePanelDecorator {
         }
         this.debounceTimer = window.setTimeout(() => {
           this.update(doc);
-        }, 120);
+        }, 100);
       });
 
       this.observer.observe(doc.body, {
@@ -60,7 +58,7 @@ export class SidePanelDecorator {
       this.unsubscribeAlias();
       this.unsubscribeAlias = null;
     }
-    this.destroyBadges();
+    this.restoreAllOriginalNames();
   }
 
   public findPeoplePanel(doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): HTMLElement | null {
@@ -100,6 +98,22 @@ export class SidePanelDecorator {
 
   public extractParticipantInfo(row: HTMLElement): ParticipantRowInfo | null {
     if (!row || typeof row.querySelectorAll !== 'function') return null;
+
+    // First check if nameEl already has stored data-ms-original
+    const nameEl =
+      row.querySelector<HTMLElement>('.notranslate') ||
+      row.querySelector<HTMLElement>('span[title], div[title]') ||
+      row.querySelector<HTMLElement>('span');
+
+    if (nameEl && nameEl.getAttribute('data-ms-original')) {
+      const stored = nameEl.getAttribute('data-ms-original')!;
+      const rowText = (row.textContent || '') + ' ' + (row.getAttribute('aria-label') || '');
+      const isPresentation = /(?:presentation|презентац|present_to_all|трансляц)/i.test(rowText);
+      return {
+        name: stored,
+        isPresentation,
+      };
+    }
 
     const buttons = Array.from(row.querySelectorAll<HTMLElement>('button, [role="button"]'));
     const presentationRegex = /(?:presentation|презентац|present_to_all|трансляц)/i;
@@ -144,11 +158,8 @@ export class SidePanelDecorator {
     }
 
     // 2. Check .notranslate elements inside row
-    if (!rawName) {
-      const notranslate = row.querySelector<HTMLElement>('.notranslate');
-      if (notranslate && notranslate.textContent) {
-        rawName = notranslate.textContent;
-      }
+    if (!rawName && nameEl && nameEl.textContent) {
+      rawName = nameEl.textContent;
     }
 
     // 3. Fallback: Parse inner text of row excluding buttons
@@ -207,184 +218,85 @@ export class SidePanelDecorator {
 
     const rows = this.findParticipantRows(panel);
     for (const row of rows) {
-      this.decorateRow(row, doc);
+      this.decorateRow(row);
     }
   }
 
-  public decorateRow(row: HTMLElement, doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): void {
+  public decorateRow(row: HTMLElement): void {
     const info = this.extractParticipantInfo(row);
     if (!info || !info.name) return;
 
-    const alias = this.aliasManager.getAlias(info.name);
-    const existingBadge = row.querySelector<HTMLElement>(`.${SIDE_PANEL_BADGE_CLASS}`);
-    const existingAddBtn = row.querySelector<HTMLElement>(`.${SIDE_PANEL_ADD_BTN_CLASS}`);
+    // Clean up any legacy badge elements from previous versions
+    row.querySelector(`.${SIDE_PANEL_BADGE_CLASS}`)?.remove();
+    row.querySelector(`.${SIDE_PANEL_ADD_BTN_CLASS}`)?.remove();
 
-    // If alias exists:
-    if (alias) {
-      if (existingAddBtn) {
-        existingAddBtn.remove();
-      }
-
-      const badgeLabel = info.isPresentation ? `🏷️ ${alias} (екран)` : `🏷️ ${alias}`;
-      const badgeTitle = `MeetSwitcher: Псевдонім "${alias}" для "${info.name}". Натисніть, щоб змінити.`;
-
-      if (existingBadge) {
-        if (existingBadge.textContent !== badgeLabel) {
-          existingBadge.textContent = badgeLabel;
-        }
-        existingBadge.title = badgeTitle;
-        return;
-      }
-
-      // Create new badge element
-      const badge = doc.createElement ? doc.createElement('span') : ({ style: {} } as any);
-      badge.className = `${SIDE_PANEL_BADGE_CLASS}${info.isPresentation ? ' is-presentation' : ''}`;
-      badge.textContent = badgeLabel;
-      badge.title = badgeTitle;
-
-      badge.addEventListener('click', async (e: any) => {
-        e.stopPropagation();
-        e.preventDefault();
-        const win = typeof window !== 'undefined' ? window : null;
-        if (win && typeof win.prompt === 'function') {
-          const newAlias = win.prompt(`Змінити псевдонім для "${info.name}":`, alias);
-          if (newAlias !== null) {
-            await this.aliasManager.setAlias(info.name, newAlias.trim());
-          }
-        }
-      });
-
-      this.attachElementToRow(row, badge);
-    } else {
-      // No alias: remove existing badge if present
-      if (existingBadge) {
-        existingBadge.remove();
-      }
-
-      // Do not add "+🏷️" on presentation rows, only on person rows
-      if (info.isPresentation) {
-        if (existingAddBtn) existingAddBtn.remove();
-        return;
-      }
-
-      if (!existingAddBtn && doc.createElement) {
-        const addBtn = doc.createElement('button');
-        addBtn.className = SIDE_PANEL_ADD_BTN_CLASS;
-        addBtn.title = `Встановити псевдонім для "${info.name}"`;
-        addBtn.textContent = '+🏷️';
-
-        addBtn.addEventListener('click', async (e: any) => {
-          e.stopPropagation();
-          e.preventDefault();
-          const win = typeof window !== 'undefined' ? window : null;
-          if (win && typeof win.prompt === 'function') {
-            const newAlias = win.prompt(`Встановити псевдонім для "${info.name}":`);
-            if (newAlias && newAlias.trim()) {
-              await this.aliasManager.setAlias(info.name, newAlias.trim());
-            }
-          }
-        });
-
-        this.attachElementToRow(row, addBtn);
-      }
-    }
-  }
-
-  private attachElementToRow(row: HTMLElement, element: HTMLElement): void {
-    // Prefer inserting right after name element (.notranslate, span[title], etc.)
     const nameEl =
       row.querySelector<HTMLElement>('.notranslate') ||
       row.querySelector<HTMLElement>('span[title], div[title]') ||
       row.querySelector<HTMLElement>('span');
 
-    if (nameEl && nameEl.parentElement) {
-      if (typeof nameEl.insertAdjacentElement === 'function') {
-        nameEl.insertAdjacentElement('afterend', element);
-      } else {
-        nameEl.parentElement.appendChild(element);
+    if (!nameEl) return;
+
+    const originalName = nameEl.getAttribute('data-ms-original') || info.name;
+    const alias = this.aliasManager.getAlias(originalName);
+
+    if (alias) {
+      nameEl.setAttribute('data-ms-original', originalName);
+
+      const combinedText = info.isPresentation
+        ? `${alias} (${originalName}) (презентація)`
+        : `${alias} (${originalName})`;
+
+      if (nameEl.getAttribute('data-ms-formatted') !== combinedText) {
+        nameEl.setAttribute('data-ms-formatted', combinedText);
+        nameEl.innerHTML = info.isPresentation
+          ? `<span class="ms-alias-name" style="font-weight: 500;">${this.escapeHtml(alias)}</span> <span class="ms-original-name" style="opacity: 0.72; font-weight: normal;">(${this.escapeHtml(originalName)})</span> <span class="ms-pres-tag" style="opacity: 0.6; font-size: 0.9em;">(презентація)</span>`
+          : `<span class="ms-alias-name" style="font-weight: 500;">${this.escapeHtml(alias)}</span> <span class="ms-original-name" style="opacity: 0.72; font-weight: normal;">(${this.escapeHtml(originalName)})</span>`;
+
+        nameEl.title = `MeetSwitcher: Псевдонім "${alias}" для "${originalName}". Натисніть двічі, щоб змінити.`;
+
+        // Double click allows quick alias editing
+        if (!(nameEl as any)._hasMsDblClick) {
+          (nameEl as any)._hasMsDblClick = true;
+          nameEl.addEventListener('dblclick', async (e: any) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const win = typeof window !== 'undefined' ? window : null;
+            if (win && typeof win.prompt === 'function') {
+              const newAlias = win.prompt(`Змінити псевдонім для "${originalName}":`, alias);
+              if (newAlias !== null) {
+                await this.aliasManager.setAlias(originalName, newAlias.trim());
+              }
+            }
+          });
+        }
       }
-    } else {
-      row.appendChild(element);
+    } else if (nameEl.hasAttribute('data-ms-original')) {
+      nameEl.textContent = originalName;
+      nameEl.removeAttribute('data-ms-original');
+      nameEl.removeAttribute('data-ms-formatted');
+      nameEl.title = originalName;
     }
   }
 
-  private injectStyles(doc: Document): void {
-    if (!doc || !doc.head || typeof doc.getElementById !== 'function' || doc.getElementById(SIDE_PANEL_STYLES_ID)) {
-      return;
-    }
-
-    const style = doc.createElement('style');
-    style.id = SIDE_PANEL_STYLES_ID;
-    style.textContent = `
-      .${SIDE_PANEL_BADGE_CLASS} {
-        display: inline-flex;
-        align-items: center;
-        gap: 3px;
-        background: rgba(26, 115, 232, 0.16);
-        color: #8ab4f8;
-        border: 1px solid rgba(138, 180, 248, 0.35);
-        border-radius: 4px;
-        padding: 1px 6px;
-        font-size: 11px;
-        font-weight: 500;
-        line-height: 16px;
-        margin-left: 6px;
-        cursor: pointer;
-        user-select: none;
-        vertical-align: middle;
-        transition: all 0.15s ease;
-        z-index: 2;
+  private restoreAllOriginalNames(): void {
+    if (typeof document === 'undefined') return;
+    const modifiedElements = document.querySelectorAll<HTMLElement>('[data-ms-original]');
+    modifiedElements.forEach((el) => {
+      const orig = el.getAttribute('data-ms-original');
+      if (orig) {
+        el.textContent = orig;
       }
-      .${SIDE_PANEL_BADGE_CLASS}:hover {
-        background: rgba(26, 115, 232, 0.3);
-        border-color: #8ab4f8;
-        color: #ffffff;
-      }
-      .${SIDE_PANEL_BADGE_CLASS}.is-presentation {
-        background: rgba(52, 168, 83, 0.16);
-        color: #81c995;
-        border-color: rgba(129, 201, 149, 0.35);
-      }
-      .${SIDE_PANEL_BADGE_CLASS}.is-presentation:hover {
-        background: rgba(52, 168, 83, 0.3);
-        border-color: #81c995;
-        color: #ffffff;
-      }
-      .${SIDE_PANEL_ADD_BTN_CLASS} {
-        display: none;
-        align-items: center;
-        justify-content: center;
-        background: rgba(255, 255, 255, 0.08);
-        color: rgba(255, 255, 255, 0.7);
-        border: 1px dashed rgba(255, 255, 255, 0.25);
-        border-radius: 4px;
-        padding: 0 5px;
-        font-size: 10px;
-        margin-left: 6px;
-        cursor: pointer;
-        line-height: 14px;
-        vertical-align: middle;
-        transition: all 0.15s ease;
-        z-index: 2;
-      }
-      div[role="listitem"]:hover .${SIDE_PANEL_ADD_BTN_CLASS},
-      [role="row"]:hover .${SIDE_PANEL_ADD_BTN_CLASS},
-      div[data-participant-id]:hover .${SIDE_PANEL_ADD_BTN_CLASS} {
-        display: inline-flex;
-      }
-      .${SIDE_PANEL_ADD_BTN_CLASS}:hover {
-        background: rgba(26, 115, 232, 0.25);
-        color: #8ab4f8;
-        border-color: #8ab4f8;
-      }
-    `;
-    doc.head.appendChild(style);
+      el.removeAttribute('data-ms-original');
+      el.removeAttribute('data-ms-formatted');
+    });
   }
 
-  private destroyBadges(): void {
-    if (typeof document !== 'undefined') {
-      document.querySelectorAll(`.${SIDE_PANEL_BADGE_CLASS}, .${SIDE_PANEL_ADD_BTN_CLASS}`).forEach((el) => el.remove());
-      document.getElementById(SIDE_PANEL_STYLES_ID)?.remove();
-    }
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 }

@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SidePanelDecorator, SIDE_PANEL_BADGE_CLASS, SIDE_PANEL_ADD_BTN_CLASS } from '../src/content/ui/side-panel-decorator.ts';
+import { SidePanelDecorator } from '../src/content/ui/side-panel-decorator.ts';
 import { AliasManager } from '../src/content/alias-manager.ts';
 
 // Mock minimal DOM Element
 class MockElement {
   public tagName: string;
   public textContent: string;
+  public innerHTML: string;
   public className: string;
   public title: string = '';
   public attributes: Record<string, string> = {};
@@ -17,6 +18,7 @@ class MockElement {
   constructor(tagName: string, textContent = '') {
     this.tagName = tagName.toUpperCase();
     this.textContent = textContent;
+    this.innerHTML = textContent;
     this.className = '';
   }
 
@@ -26,6 +28,14 @@ class MockElement {
 
   getAttribute(name: string): string | null {
     return this.attributes[name.toLowerCase()] || null;
+  }
+
+  hasAttribute(name: string): boolean {
+    return Boolean(this.attributes[name.toLowerCase()]);
+  }
+
+  removeAttribute(name: string) {
+    delete this.attributes[name.toLowerCase()];
   }
 
   appendChild(child: MockElement) {
@@ -126,76 +136,53 @@ test('SidePanelDecorator extractParticipantInfo resolves from notranslate elemen
   assert.equal(info.isPresentation, false);
 });
 
-test('SidePanelDecorator decorates row with alias badge when alias exists', async () => {
+test('SidePanelDecorator rewrites participant name into combined alias and original format', async () => {
   const aliasManager = new AliasManager({ enableStorageSync: false });
   await aliasManager.setAlias('Bohdan Rubakha', 'Бодя');
 
   const decorator = new SidePanelDecorator(aliasManager);
 
   const row = new MockElement('div');
+  const nameSpan = new MockElement('span', 'Bohdan Rubakha');
+  nameSpan.className = 'notranslate';
+  row.appendChild(nameSpan);
+
   const muteBtn = new MockElement('button');
   muteBtn.setAttribute('aria-label', "Mute Bohdan Rubakha's microphone");
   row.appendChild(muteBtn);
 
-  const mockDoc = {
-    createElement: (tag: string) => new MockElement(tag),
-  };
+  decorator.decorateRow(row as any);
 
-  decorator.decorateRow(row as any, mockDoc as any);
+  assert.equal(nameSpan.getAttribute('data-ms-original'), 'Bohdan Rubakha');
+  assert.equal(nameSpan.innerHTML.includes('Бодя'), true);
+  assert.equal(nameSpan.innerHTML.includes('Bohdan Rubakha'), true);
 
-  const badge = row.querySelector(`.${SIDE_PANEL_BADGE_CLASS}`);
-  assert.ok(badge, 'Badge element must be created');
-  assert.equal(badge.textContent, '🏷️ Бодя');
-  assert.equal(badge.title.includes('Бодя'), true);
+  // When alias is removed, original name should be restored
+  await aliasManager.removeAlias('Bohdan Rubakha');
+  decorator.decorateRow(row as any);
+
+  assert.equal(nameSpan.textContent, 'Bohdan Rubakha');
+  assert.equal(nameSpan.hasAttribute('data-ms-original'), false);
 });
 
-test('SidePanelDecorator decorates presentation row with presentation badge', async () => {
+test('SidePanelDecorator rewrites presentation row name into combined format with presentation label', async () => {
   const aliasManager = new AliasManager({ enableStorageSync: false });
   await aliasManager.setAlias('Bohdan Rubakha', 'Бодя');
 
   const decorator = new SidePanelDecorator(aliasManager);
 
   const row = new MockElement('div');
-  const muteBtn = new MockElement('button');
-  muteBtn.setAttribute('aria-label', "Mute Bohdan Rubakha's presentation");
-  row.appendChild(muteBtn);
+  const nameSpan = new MockElement('span', 'Bohdan Rubakha');
+  nameSpan.className = 'notranslate';
+  row.appendChild(nameSpan);
 
-  const mockDoc = {
-    createElement: (tag: string) => new MockElement(tag),
-  };
+  const presBtn = new MockElement('button');
+  presBtn.setAttribute('aria-label', "Mute Bohdan Rubakha's presentation");
+  row.appendChild(presBtn);
 
-  decorator.decorateRow(row as any, mockDoc as any);
+  decorator.decorateRow(row as any);
 
-  const badge = row.querySelector(`.${SIDE_PANEL_BADGE_CLASS}`);
-  assert.ok(badge, 'Presentation badge element must be created');
-  assert.equal(badge.textContent, '🏷️ Бодя (екран)');
-  assert.equal(badge.className.includes('is-presentation'), true);
-});
-
-test('SidePanelDecorator adds add-button when no alias exists and removes when alias added', async () => {
-  const aliasManager = new AliasManager({ enableStorageSync: false });
-  const decorator = new SidePanelDecorator(aliasManager);
-
-  const row = new MockElement('div');
-  const muteBtn = new MockElement('button');
-  muteBtn.setAttribute('aria-label', "Mute Maria Ivanova's microphone");
-  row.appendChild(muteBtn);
-
-  const mockDoc = {
-    createElement: (tag: string) => new MockElement(tag),
-  };
-
-  // Initially no alias: should show add button
-  decorator.decorateRow(row as any, mockDoc as any);
-  const addBtn = row.querySelector(`.${SIDE_PANEL_ADD_BTN_CLASS}`);
-  assert.ok(addBtn, 'Add button must be present when student has no alias');
-
-  // Now set alias: should replace add button with alias badge
-  await aliasManager.setAlias('Maria Ivanova', 'Маша');
-  decorator.decorateRow(row as any, mockDoc as any);
-
-  assert.equal(row.querySelector(`.${SIDE_PANEL_ADD_BTN_CLASS}`), null, 'Add button must be removed');
-  const badge = row.querySelector(`.${SIDE_PANEL_BADGE_CLASS}`);
-  assert.ok(badge, 'Badge must be added');
-  assert.equal(badge.textContent, '🏷️ Маша');
+  assert.equal(nameSpan.getAttribute('data-ms-original'), 'Bohdan Rubakha');
+  assert.equal(nameSpan.innerHTML.includes('Бодя'), true);
+  assert.equal(nameSpan.innerHTML.includes('презентація'), true);
 });
