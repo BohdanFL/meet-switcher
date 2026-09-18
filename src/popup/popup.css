@@ -434,6 +434,45 @@ input:checked + .slider:before {
   width: 100%;
 }
 
+.group-select-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.roster-select {
+  flex: 1;
+  background-color: #1e1f21;
+  border: 1px solid #3c4043;
+  border-radius: 6px;
+  color: #ffffff;
+  padding: 7px 10px;
+  font-size: 12px;
+  outline: none;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.roster-select:focus {
+  border-color: #8ab4f8;
+}
+
+.roster-select option {
+  background-color: #282a2d;
+  color: #ffffff;
+}
+
+.group-inline-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: #202124;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px dashed #5f6368;
+}
+
 .roster-input, .roster-search-input {
   width: 100%;
   background-color: #1e1f21;
@@ -486,6 +525,101 @@ input:checked + .slider:before {
   background-color: #282a2d;
   border: 1px dashed #3c4043;
   border-radius: 8px;
+}
+
+.roster-groups-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group-card {
+  background-color: #242528;
+  border: 1px solid #3c4043;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.group-card:hover {
+  border-color: #5f6368;
+}
+
+.group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background-color: #2d2f34;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header:hover {
+  background-color: #33353b;
+}
+
+.group-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.group-header-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8eaed;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-badge-count {
+  font-size: 10px;
+  background-color: rgba(138, 180, 248, 0.15);
+  color: #8ab4f8;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.group-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.group-chevron {
+  font-size: 10px;
+  color: #9aa0a6;
+  margin-left: 4px;
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.group-card.collapsed .group-chevron {
+  transform: rotate(-90deg);
+}
+
+.group-card.collapsed .group-body {
+  display: none;
+}
+
+.group-body {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-empty-hint {
+  font-size: 11px;
+  color: #9aa0a6;
+  font-style: italic;
+  padding: 6px 4px;
+  text-align: center;
 }
 
 .roster-items-list {

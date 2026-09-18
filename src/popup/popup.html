@@ -36,6 +36,19 @@
           <div class="form-row">
             <input type="text" id="input-student-name" class="roster-input" placeholder="Ім'я учня (напр: Максим)">
           </div>
+          <div class="form-row group-select-row">
+            <select id="select-group" class="roster-select" title="Оберіть групу для учня">
+              <option value="">📁 (Без групи)</option>
+            </select>
+            <button type="button" id="btn-show-add-group" class="btn btn-secondary btn-sm" title="Створити нову групу">
+              ➕ Нова група
+            </button>
+          </div>
+          <div id="group-create-inline" class="form-row group-inline-row" style="display: none;">
+            <input type="text" id="input-new-group-name" class="roster-input" placeholder="Назва групи (напр: 5-А клас)">
+            <button type="button" id="btn-save-new-group" class="btn btn-primary btn-sm">Додати</button>
+            <button type="button" id="btn-cancel-new-group" class="btn btn-secondary btn-sm">✕</button>
+          </div>
           <div class="form-actions">
             <button id="btn-save-alias" class="btn btn-primary btn-sm">
               <span>💾</span> Зберегти
@@ -48,7 +61,7 @@
 
         <!-- Search / Filter -->
         <div class="roster-filter-row">
-          <input type="text" id="input-search-roster" class="roster-search-input" placeholder="🔍 Пошук учня або акаунта...">
+          <input type="text" id="input-search-roster" class="roster-search-input" placeholder="🔍 Пошук учня, акаунта або групи...">
         </div>
 
         <!-- Roster List -->
@@ -60,7 +73,7 @@
               Введіть ім'я в HUD під час уроку (✏️) або додайте вручну вище.
             </div>
           </div>
-          <ul id="roster-list" class="roster-items-list"></ul>
+          <div id="roster-groups-container" class="roster-groups-container"></div>
         </div>
 
         <!-- Roster Toolbar (Export / Import) -->

@@ -74,7 +74,13 @@ export class AliasManager {
     return originalName;
   }
 
-  public async setAlias(originalName: string, studentName: string): Promise<void> {
+  public getStudentGroup(originalName: string): string | null {
+    const key = this.normalizeName(originalName);
+    const entry = this.cache.get(key);
+    return entry && entry.group ? entry.group : null;
+  }
+
+  public async setAlias(originalName: string, studentName: string, group?: string): Promise<void> {
     const trimmedAlias = studentName.trim();
     if (!trimmedAlias) {
       await this.removeAlias(originalName);
@@ -82,10 +88,14 @@ export class AliasManager {
     }
 
     const key = this.normalizeName(originalName);
+    const existing = this.cache.get(key);
+    const resolvedGroup = group !== undefined ? (group.trim() || undefined) : existing?.group;
+
     const entry: StudentAliasEntry = {
       key,
       originalName: originalName.trim(),
       alias: trimmedAlias,
+      group: resolvedGroup,
       updatedAt: Date.now(),
     };
 
@@ -126,6 +136,7 @@ export class AliasManager {
           key,
           originalName: item.originalName.trim(),
           alias: item.alias.trim(),
+          group: item.group ? item.group.trim() : undefined,
           updatedAt: item.updatedAt || Date.now(),
         });
         count++;
