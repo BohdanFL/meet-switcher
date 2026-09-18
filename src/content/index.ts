@@ -85,6 +85,7 @@ function initMeetSwitcher(): void {
   const aliasManager = AliasManager.getInstance();
   aliasManager.init();
   const tileDecorator = new TileBadgeDecorator(aliasManager);
+  tileDecorator.start();
   const sidePanelDecorator = new SidePanelDecorator(aliasManager);
   sidePanelDecorator.start();
 
