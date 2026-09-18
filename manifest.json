@@ -8,12 +8,18 @@
     "downloads"
   ],
   "host_permissions": [
-    "https://meet.google.com/*"
+    "https://meet.google.com/*",
+    "https://lms.alg.academy/*"
   ],
   "content_scripts": [
     {
       "matches": ["https://meet.google.com/*"],
       "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://lms.alg.academy/*"],
+      "js": ["lms.js"],
       "run_at": "document_idle"
     }
   ],

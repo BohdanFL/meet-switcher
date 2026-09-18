@@ -1,0 +1,78 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { parseLmsGroupPage } from '../src/lms/parser.ts';
+
+test('parseLmsGroupPage extracts group name, id, and students from user DOM snippet', () => {
+  // Simulating user snippet:
+  // <div id="group-view" data-id="2595601">
+  //   <div class="EditableArea GroupCard__header__title">
+  //     <div class="EditableArea__input">УКР_Гейм_ЧТ_19:00</div>
+  //   </div>
+  //   <div id="group-student-grid">
+  //     <div class="GroupStudent__list">
+  //       <span class="permission-link GroupStudent__item__name">
+  //         <a href="/student/update/6753930" target="_blank">Альфелді Камалія</a>
+  //       </span>
+  //       <span class="permission-link GroupStudent__item__name">
+  //         <a href="/student/update/6753283" target="_blank">Воронченко Віра</a>
+  //       </span>
+  //     </div>
+  //   </div>
+  // </div>
+
+  const links = [
+    {
+      getAttribute: (k: string) => (k === 'href' ? '/student/update/6753930' : null),
+      textContent: ' Альфелді Камалія ',
+    },
+    {
+      getAttribute: (k: string) => (k === 'href' ? 'https://lms.alg.academy/student/update/6753283' : null),
+      textContent: 'Воронченко Віра',
+    },
+  ];
+
+  const titleEl = { textContent: '  УКР_Гейм_ЧТ_19:00  ' };
+  const rootEl = {
+    getAttribute: (k: string) => (k === 'data-id' ? '2595601' : null),
+  };
+
+  const mockDoc = {
+    querySelector: (sel: string) => {
+      if (sel.includes('EditableArea__input') || sel.includes('GroupCard__header__title')) {
+        return titleEl;
+      }
+      if (sel.includes('#group-view')) {
+        return rootEl;
+      }
+      return null;
+    },
+    querySelectorAll: (sel: string) => {
+      if (sel.includes('/student/update/')) {
+        return links;
+      }
+      return [];
+    },
+  } as any;
+
+  const group = parseLmsGroupPage(mockDoc, 'https://lms.alg.academy/group/view/2595601#group-student-grid');
+
+  assert.ok(group);
+  assert.equal(group.id, '2595601');
+  assert.equal(group.name, 'УКР_Гейм_ЧТ_19:00');
+  assert.equal(group.students.length, 2);
+  assert.equal(group.students[0].id, '6753930');
+  assert.equal(group.students[0].fullName, 'Альфелді Камалія');
+  assert.equal(group.students[0].lmsUrl, 'https://lms.alg.academy/student/update/6753930');
+  assert.equal(group.students[1].id, '6753283');
+  assert.equal(group.students[1].fullName, 'Воронченко Віра');
+});
+
+test('parseLmsGroupPage handles missing elements gracefully', () => {
+  const mockDoc = {
+    querySelector: () => null,
+    querySelectorAll: () => [],
+  } as any;
+
+  const result = parseLmsGroupPage(mockDoc, 'https://lms.alg.academy/other/page');
+  assert.equal(result, null);
+});

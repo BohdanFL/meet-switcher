@@ -56,6 +56,23 @@ async function run() {
     },
   });
 
+  // 4. Build LMS content script
+  await build({
+    configFile: false,
+    build: {
+      outDir: 'dist',
+      emptyOutDir: false,
+      sourcemap: true,
+      watch: isWatch ? {} : null,
+      lib: {
+        entry: path.resolve('src/lms/index.ts'),
+        name: 'MeetSwitcherLMS',
+        formats: ['iife'],
+        fileName: () => 'lms.js',
+      },
+    },
+  });
+
   // 4. Copy manifest.json
   if (fs.existsSync('manifest.json')) {
     fs.copyFileSync('manifest.json', 'dist/manifest.json');
