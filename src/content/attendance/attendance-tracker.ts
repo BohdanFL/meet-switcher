@@ -76,7 +76,7 @@ export class AttendanceTracker {
     });
   }
 
-  public formatManagerReport(group: StudentGroup, items: AttendanceStatusItem[]): string {
+  public formatManagerReport(_group: StudentGroup, items: AttendanceStatusItem[]): string {
     // Sort items alphabetically by student full name
     const sorted = [...items].sort((a, b) =>
       a.student.fullName.localeCompare(b.student.fullName, 'uk')
