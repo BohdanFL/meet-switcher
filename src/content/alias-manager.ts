@@ -154,24 +154,44 @@ export class AliasManager {
     }
   }
 
+  private isExtensionContextValid(): boolean {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && !chrome.runtime.id) {
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async readStorage(): Promise<StudentAliasMap> {
     return new Promise((resolve) => {
-      const storage = typeof chrome !== 'undefined' ? (chrome.storage?.sync || chrome.storage?.local) : null;
-      if (!storage) {
-        resolve({});
-        return;
-      }
-
-      storage.get(this.storageKey, (res) => {
-        if (typeof chrome !== 'undefined' && chrome.runtime?.lastError) {
-          // Fallback to local
-          chrome.storage?.local?.get(this.storageKey, (localRes) => {
-            resolve((localRes?.[this.storageKey] as StudentAliasMap) || {});
-          });
+      try {
+        if (!this.isExtensionContextValid()) {
+          resolve({});
           return;
         }
-        resolve((res?.[this.storageKey] as StudentAliasMap) || {});
-      });
+
+        const storage = typeof chrome !== 'undefined' ? (chrome.storage?.sync || chrome.storage?.local) : null;
+        if (!storage) {
+          resolve({});
+          return;
+        }
+
+        storage.get(this.storageKey, (res) => {
+          if (typeof chrome !== 'undefined' && chrome.runtime?.lastError) {
+            // Fallback to local
+            chrome.storage?.local?.get(this.storageKey, (localRes) => {
+              resolve((localRes?.[this.storageKey] as StudentAliasMap) || {});
+            });
+            return;
+          }
+          resolve((res?.[this.storageKey] as StudentAliasMap) || {});
+        });
+      } catch {
+        resolve({});
+      }
     });
   }
 
@@ -182,20 +202,29 @@ export class AliasManager {
     }
 
     return new Promise((resolve) => {
-      const storage = typeof chrome !== 'undefined' ? (chrome.storage?.sync || chrome.storage?.local) : null;
-      if (!storage) {
-        resolve();
-        return;
-      }
-
-      storage.set({ [this.storageKey]: data }, () => {
-        if (typeof chrome !== 'undefined' && chrome.runtime?.lastError) {
-          // Fallback to local storage if sync quota exceeded
-          chrome.storage?.local?.set({ [this.storageKey]: data }, () => resolve());
-        } else {
+      try {
+        if (!this.isExtensionContextValid()) {
           resolve();
+          return;
         }
-      });
+
+        const storage = typeof chrome !== 'undefined' ? (chrome.storage?.sync || chrome.storage?.local) : null;
+        if (!storage) {
+          resolve();
+          return;
+        }
+
+        storage.set({ [this.storageKey]: data }, () => {
+          if (typeof chrome !== 'undefined' && chrome.runtime?.lastError) {
+            // Fallback to local storage if sync quota exceeded
+            chrome.storage?.local?.set({ [this.storageKey]: data }, () => resolve());
+          } else {
+            resolve();
+          }
+        });
+      } catch {
+        resolve();
+      }
     });
   }
 

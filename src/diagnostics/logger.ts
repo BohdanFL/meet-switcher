@@ -46,7 +46,21 @@ export class DiagnosticsLogger {
     // Periodically sync session summary to chrome.storage.local every 10 seconds
     if (this.config.enableStorageSync && typeof chrome !== 'undefined' && chrome.storage?.local) {
       this.syncTimer = setInterval(() => {
-        this.persistToStorage().catch(() => {});
+        try {
+          if (!this.isExtensionContextValid(chrome)) {
+            if (this.syncTimer) {
+              clearInterval(this.syncTimer);
+              this.syncTimer = null;
+            }
+            return;
+          }
+          this.persistToStorage().catch(() => {});
+        } catch {
+          if (this.syncTimer) {
+            clearInterval(this.syncTimer);
+            this.syncTimer = null;
+          }
+        }
       }, 10000);
       if (typeof this.syncTimer?.unref === 'function') {
         this.syncTimer.unref();
@@ -263,14 +277,37 @@ export class DiagnosticsLogger {
   }
 
   /**
+   * Safe check for whether the extension context is still alive.
+   * When an extension is reloaded or updated in chrome://extensions, existing content scripts
+   * become orphaned and accessing chrome.* APIs throws "Extension context invalidated".
+   */
+  public isExtensionContextValid(chromeObj?: any): boolean {
+    const obj = chromeObj || (typeof chrome !== 'undefined' ? chrome : (globalThis as any).chrome);
+    if (!obj) return false;
+    try {
+      if (obj.runtime && !obj.runtime.id) {
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Persist current session into chrome.storage.local rolling history.
    */
   public async persistToStorage(): Promise<void> {
     const chromeObj = typeof chrome !== 'undefined' ? chrome : (globalThis as any).chrome;
     if (
       !this.config.enableStorageSync ||
-      !chromeObj?.storage?.local
+      !chromeObj?.storage?.local ||
+      !this.isExtensionContextValid(chromeObj)
     ) {
+      if (!this.isExtensionContextValid(chromeObj) && this.syncTimer) {
+        clearInterval(this.syncTimer);
+        this.syncTimer = null;
+      }
       return;
     }
 
@@ -304,7 +341,14 @@ export class DiagnosticsLogger {
       }
 
       await chromeObj.storage.local.set({ [STORAGE_KEY_SESSIONS]: sessions });
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.message?.includes('Extension context invalidated') || !this.isExtensionContextValid(chromeObj)) {
+        if (this.syncTimer) {
+          clearInterval(this.syncTimer);
+          this.syncTimer = null;
+        }
+        return;
+      }
       console.warn('[MeetSwitcher] Failed to persist session to chrome.storage.local', err);
     }
   }
