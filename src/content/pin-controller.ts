@@ -458,7 +458,9 @@ export class PinController {
 
     // Pass 2: Button inside item has aria-label mentioning participant AND presentation
     for (const item of items) {
-      const buttons: HTMLButtonElement[] = Array.from(item.querySelectorAll('button')) as HTMLButtonElement[];
+      const buttons: HTMLElement[] = Array.from(
+        item.querySelectorAll<HTMLElement>('button, [role="button"]')
+      );
       for (const btn of buttons) {
         const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
         if (
@@ -476,9 +478,9 @@ export class PinController {
   /**
    * Finds the Pin button inside a People panel presentation row.
    */
-  public findPinButtonInItem(item: HTMLElement): HTMLButtonElement | null {
+  public findPinButtonInItem(item: HTMLElement): HTMLElement | null {
     if (!item.querySelectorAll) return null;
-    const buttons = Array.from(item.querySelectorAll<HTMLButtonElement>('button'));
+    const buttons = Array.from(item.querySelectorAll<HTMLElement>('button, [role="button"], div[tabindex="0"]'));
     const pinRegex = /(?:pin|закріпити|прикріпити|keep)/i;
 
     for (const btn of buttons) {
@@ -489,7 +491,13 @@ export class PinController {
       const isUnpin = aria.includes('unpin') || aria.includes('відкріпити') || aria.includes('открепить') || tooltip.includes('unpin');
       if (isUnpin) continue;
 
-      if (pinRegex.test(aria) || pinRegex.test(tooltip) || text.includes('keep')) {
+      if (
+        pinRegex.test(aria) ||
+        pinRegex.test(tooltip) ||
+        text.includes('keep') ||
+        aria.includes('keep_outline') ||
+        text.includes('keep_outline')
+      ) {
         return btn;
       }
     }
@@ -533,22 +541,38 @@ export class PinController {
     }
 
     if (!pinBtn) {
-      // Look for 3-dots menu button inside item
-      const moreBtn = item.querySelector && item.querySelector<HTMLButtonElement>(
-        'button[aria-label*="More" i], button[aria-label*="інші дії" i], button[aria-label*="більше" i], button[data-tooltip*="More" i]'
+      // Look for 3-dots menu button inside item (button or div[role="button"] with more/actions label or more_vert icon)
+      let moreBtn = item.querySelector<HTMLElement>(
+        'button[aria-label*="More" i], [role="button"][aria-label*="More" i], button[aria-label*="дії" i], [role="button"][aria-label*="дії" i], button[aria-label*="більше" i], [role="button"][aria-label*="більше" i], button[aria-label*="параметр" i], [role="button"][aria-label*="параметр" i], button[data-tooltip*="More" i], [data-tooltip*="More" i]'
       );
+
+      if (!moreBtn) {
+        const allCandidates = Array.from(item.querySelectorAll<HTMLElement>('button, [role="button"], i, span'));
+        const iconEl = allCandidates.find((el) => {
+          const t = (el.textContent || '').trim();
+          const a = (el.getAttribute('aria-label') || '').toLowerCase();
+          return t === 'more_vert' || a.includes('more_vert') || a.includes('інші дії') || a.includes('додаткові дії');
+        });
+        moreBtn = iconEl?.closest<HTMLElement>('button, [role="button"]') || null;
+      }
+
       const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
       if (moreBtn && targetDoc?.querySelectorAll) {
         this.dispatchFullClick(moreBtn);
-        await this.sleep(50);
+        await this.sleep(60);
         const menuItems = Array.from(
-          targetDoc.querySelectorAll<HTMLElement>('[role="menuitem"], [role="option"]')
+          targetDoc.querySelectorAll<HTMLElement>('[role="menuitem"], [role="option"], li[role="menuitem"], div[role="menuitem"]')
         );
         const menuPin = menuItems.find((m) => {
           const t = (m.textContent || '').toLowerCase();
           const a = (m.getAttribute('aria-label') || '').toLowerCase();
-          return (t.includes('pin') || t.includes('закріпити') || a.includes('pin') || a.includes('закріпити')) &&
-            !t.includes('unpin') && !a.includes('unpin') && !t.includes('відкріпити');
+          return (
+            (t.includes('pin') || t.includes('закріпити') || a.includes('pin') || a.includes('закріпити') || t.includes('keep')) &&
+            !t.includes('unpin') &&
+            !a.includes('unpin') &&
+            !t.includes('відкріпити') &&
+            !t.includes('открепить')
+          );
         });
         if (menuPin) {
           this.dispatchFullClick(menuPin);
