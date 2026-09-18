@@ -10,6 +10,9 @@ import { TileBadgeDecorator } from './ui/tile-badge';
 import { SidePanelDecorator } from './ui/side-panel-decorator';
 import { DiagnosticsLogger } from '../diagnostics/logger.ts';
 import { CallMonitor } from '../diagnostics/call-monitor.ts';
+import { GroupStore } from './attendance/group-store';
+import { CallTitleDetector } from './attendance/title-detector';
+import { AttendanceModal } from './ui/attendance-modal';
 
 // Prevent duplicate script execution
 declare global {
@@ -140,6 +143,51 @@ async function initMeetSwitcher(): Promise<void> {
   hotkeys.setOnToggleDemo(toggleDemo);
   hotkeys.setOnToggleTurbo(toggleTurbo);
 
+  const groupStore = GroupStore.getInstance();
+  await groupStore.init();
+
+  const titleDetector = new CallTitleDetector();
+  titleDetector.start();
+
+  const attendanceModal = new AttendanceModal(hud.getShadowRoot(), groupStore);
+
+  const getActiveParticipantNames = (): string[] => {
+    const names = new Set<string>();
+    for (const s of detector.getScreenShares()) {
+      if (s.participantName) names.add(s.participantName);
+    }
+    const tileNames = document.querySelectorAll('[data-participant-id] [data-self-name], [data-participant-id] span.notranslate');
+    tileNames.forEach((el) => {
+      const t = el.textContent?.trim();
+      if (t) names.add(t);
+    });
+    const sidePanelNames = document.querySelectorAll('div[role="listitem"] span.zWGUib, div[role="listitem"] span.notranslate');
+    sidePanelNames.forEach((el) => {
+      const t = el.textContent?.trim();
+      if (t) names.add(t);
+    });
+    return Array.from(names);
+  };
+
+  // Auto-match group when meeting title is detected
+  titleDetector.onTitleChange(async (title) => {
+    logger.log('SYSTEM', `Google Meet title detected: "${title}"`);
+    const matched = await groupStore.findGroupByTitle(title);
+    if (matched) {
+      logger.log('SYSTEM', `Auto-matched LMS group: "${matched.name}" (ID: ${matched.id})`);
+      attendanceModal.setSelectedGroup(matched.id);
+    }
+  });
+
+  hud.setOnToggleAttendance(() => {
+    if (attendanceModal.isOpen()) {
+      attendanceModal.close();
+    } else {
+      attendanceModal.open();
+      attendanceModal.update(getActiveParticipantNames());
+    }
+  });
+
   // Connect detector output to HUD, Wall, and Tile Badges
   detector.onUpdate((shares) => {
     if (shares.length > 0) {
@@ -156,6 +204,9 @@ async function initMeetSwitcher(): Promise<void> {
   detector.onScan((shares) => {
     tileDecorator.updateBadges(shares);
     sidePanelDecorator.update();
+    if (attendanceModal.isOpen()) {
+      attendanceModal.update(getActiveParticipantNames());
+    }
   });
 
   // Re-render video tile badges whenever aliases are added, edited, or removed

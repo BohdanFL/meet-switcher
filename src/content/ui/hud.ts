@@ -1,7 +1,8 @@
-import { ScreenShare } from '../../types';
-import { PinController } from '../pin-controller';
-import { DraggableHud } from './drag-drop';
-import { AliasManager } from '../alias-manager';
+import type { ScreenShare } from '../../types/index.ts';
+import type { PinController } from '../pin-controller.ts';
+import { DraggableHud } from './drag-drop.ts';
+import { AliasManager } from '../alias-manager.ts';
+import { getHudSkeletonHtml } from './hud-template.ts';
 import hudStyles from './styles.css?inline';
 
 export class SwitcherHud {
@@ -69,9 +70,14 @@ export class SwitcherHud {
   private onToggleWallHandler?: () => void;
   private onToggleDemoHandler?: () => void;
   private onToggleTurboHandler?: () => void;
+  private onToggleAttendanceHandler?: () => void;
   private isDemoActive = false;
   private isDemoVisible = false;
   private isTurboActive = true;
+
+  public setOnToggleAttendance(handler: () => void): void {
+    this.onToggleAttendanceHandler = handler;
+  }
 
   public setShowDemo(visible: boolean): void {
     this.isDemoVisible = visible;
@@ -143,30 +149,7 @@ export class SwitcherHud {
   private buildSkeleton(): void {
     this.containerEl = document.createElement('div');
     this.containerEl.className = 'hud-container';
-
-    this.containerEl.innerHTML = `
-      <div class="hud-header">
-        <div class="hud-title-wrap">
-          <span class="drag-handle">⠿</span>
-          <span class="hud-title">MeetSwitcher</span>
-          <span class="hud-badge">0 екранів</span>
-        </div>
-        <div class="hud-actions">
-          <button class="icon-btn speed-btn active" title="Турбо-режим активний: анімації Google Meet вимкнено (Alt + A)">⚡</button>
-          <button class="btn-demo-pill" style="display: none;" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪 Демо</button>
-          <button class="icon-btn wall-btn" title="Стіна класу / Огляд (Alt + W)">⊞</button>
-          <button class="icon-btn toggle-btn" title="Згорнути / Розгорнути">─</button>
-        </div>
-      </div>
-      <div class="hud-body">
-        <div class="screen-list-wrap"></div>
-      </div>
-      <div class="hud-footer">
-        <span><kbd>Alt+W</kbd> Стіна</span>
-        <span class="hud-footer-demo-hint" style="display: none;"><kbd>Alt+Shift+D</kbd> Демо</span>
-        <span><kbd>Alt+0</kbd> Відкріп</span>
-      </div>
-    `;
+    this.containerEl.innerHTML = getHudSkeletonHtml();
 
     this.shadow.appendChild(this.containerEl);
 
@@ -185,6 +168,13 @@ export class SwitcherHud {
     wallBtn.addEventListener('click', () => {
       if (this.onToggleWallHandler) {
         this.onToggleWallHandler();
+      }
+    });
+
+    const attendanceBtn = this.containerEl.querySelector<HTMLButtonElement>('.attendance-btn')!;
+    attendanceBtn.addEventListener('click', () => {
+      if (this.onToggleAttendanceHandler) {
+        this.onToggleAttendanceHandler();
       }
     });
 
