@@ -137,3 +137,121 @@ test('parseLmsGroupPage filters out inactive students (with is-inactive class or
   assert.equal(group.students[0].id, '1111111');
   assert.equal(group.students[0].fullName, 'Учень Активний');
 });
+
+test('parseLmsGroupPage filters out transferred student matching exact user snippet', () => {
+  // Simulating user snippet:
+  // <div class="Expandable GroupStudent__item is-inactive">
+  //   <div class="Expandable__header">
+  //     <div class="GroupStudent__row">
+  //       <div class="GroupStudent__col GroupStudent__col__badge">
+  //         <div class="clearfix">
+  //           <span class="permission-link GroupStudent__item__name">
+  //             <a href="/student/update/6760652">Мисюк Павло</a>
+  //           </span>
+  //         </div>
+  //       </div>
+  //       <div class="GroupStudent__col GroupStudent__col__status">
+  //         <button class="el-button el-button--warning"><b>перекладений 15.09.2026</b></button>
+  //       </div>
+  //     </div>
+  //   </div>
+  // </div>
+
+  const transferredItem = {
+    className: 'Expandable GroupStudent__item is-inactive',
+    classList: {
+      contains: (c: string) => ['Expandable', 'GroupStudent__item', 'is-inactive'].includes(c),
+    },
+  };
+
+  const transferredHeader = {
+    parentElement: transferredItem,
+    className: 'Expandable__header',
+    classList: { contains: () => false },
+  };
+
+  const transferredStatusContainer = {
+    className: 'GroupStudent__col GroupStudent__col__status',
+    classList: { contains: () => false },
+    textContent: 'перекладений 15.09.2026 відновити',
+    querySelector: (sel: string) => (sel.includes('warning') ? { className: 'el-button--warning' } : null),
+  };
+
+  const transferredRow = {
+    parentElement: transferredHeader,
+    className: 'GroupStudent__row',
+    classList: { contains: () => false },
+    querySelector: (sel: string) => (sel.includes('status') ? transferredStatusContainer : null),
+  };
+
+  const transferredBadge = {
+    parentElement: transferredRow,
+    className: 'GroupStudent__col GroupStudent__col__badge',
+    classList: { contains: () => false },
+  };
+
+  const transferredLink = {
+    getAttribute: (k: string) => (k === 'href' ? '/student/update/6760652' : null),
+    textContent: 'Мисюк Павло',
+    parentElement: transferredBadge,
+    closest: (sel: string) => {
+      if (sel.includes('is-inactive')) return transferredItem;
+      if (sel.includes('GroupStudent__row')) return transferredRow;
+      if (sel.includes('GroupStudent__item')) return transferredItem;
+      return null;
+    },
+  };
+
+  const activeItem = {
+    className: 'Expandable GroupStudent__item',
+    classList: {
+      contains: (c: string) => ['Expandable', 'GroupStudent__item'].includes(c),
+    },
+  };
+
+  const activeStatusContainer = {
+    className: 'GroupStudent__col GroupStudent__col__status',
+    classList: { contains: () => false },
+    textContent: 'зарахований 01.09.2026',
+    querySelector: () => null,
+  };
+
+  const activeRow = {
+    parentElement: activeItem,
+    className: 'GroupStudent__row',
+    classList: { contains: () => false },
+    querySelector: (sel: string) => (sel.includes('status') ? activeStatusContainer : null),
+  };
+
+  const activeLink = {
+    getAttribute: (k: string) => (k === 'href' ? '/student/update/9999999' : null),
+    textContent: 'Активний Учень',
+    parentElement: activeRow,
+    closest: (sel: string) => {
+      if (sel.includes('is-inactive')) return null;
+      if (sel.includes('GroupStudent__row')) return activeRow;
+      if (sel.includes('GroupStudent__item')) return activeItem;
+      return null;
+    },
+  };
+
+  const gridEl = {
+    querySelectorAll: () => [transferredLink, activeLink],
+  };
+
+  const mockDoc = {
+    querySelector: (sel: string) => {
+      if (sel.includes('group-student-grid')) return gridEl;
+      if (sel.includes('GroupCard__header__title')) return { textContent: 'УКР_Гейм' };
+      if (sel.includes('group-view')) return { getAttribute: () => '2594219' };
+      return null;
+    },
+  } as any;
+
+  const group = parseLmsGroupPage(mockDoc, 'https://lms.alg.academy/group/view/2594219#group-student-grid');
+  assert.ok(group);
+  assert.equal(group.students.length, 1);
+  assert.equal(group.students[0].id, '9999999');
+  assert.equal(group.students[0].fullName, 'Активний Учень');
+});
+

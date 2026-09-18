@@ -23,9 +23,11 @@ export function parseLmsGroupPage(doc: ParentNode, pageUrl: string): StudentGrou
   );
   const groupName = titleEl?.textContent?.trim() || `Група ${groupId}`;
 
-  // 3. Extract Students from #group-student-grid
+  // 3. Extract Students from #group-student-grid (scope to grid if present)
+  const gridEl = doc.querySelector('#group-student-grid');
+  const scopeEl = gridEl || doc;
   const studentLinks = Array.from(
-    doc.querySelectorAll<HTMLAnchorElement>('#group-student-grid a[href*="/student/update/"], a[href*="/student/update/"]')
+    scopeEl.querySelectorAll<HTMLAnchorElement>('a[href*="/student/update/"]')
   );
 
   const seenIds = new Set<string>();
@@ -39,31 +41,81 @@ export function parseLmsGroupPage(doc: ParentNode, pageUrl: string): StudentGrou
     const studentId = match[1];
     if (seenIds.has(studentId)) continue;
 
-    // Filter out inactive students (with is-inactive class or non-enrolled status)
-    const row = link.closest?.('.GroupStudent__item, .Expandable, tr, .GroupStudent__row') || link.parentElement;
+    // Filter out inactive / transferred / expelled students
+    // 1. Direct closest checks on link
+    if (
+      link.closest?.('.is-inactive, [class*="inactive"]') ||
+      Boolean(link.closest?.('.is-inactive'))
+    ) {
+      continue;
+    }
+
+    // 2. Full ancestor traversal checking any element containing 'inactive' class
+    let isInactive = false;
+    let curr: Element | null = link.parentElement;
+    while (curr) {
+      const cls = curr.className;
+      if (
+        curr.classList?.contains('is-inactive') ||
+        (typeof cls === 'string' && cls.includes('is-inactive'))
+      ) {
+        isInactive = true;
+        break;
+      }
+      if (curr.id === 'group-student-grid' || curr.id === 'group-view') {
+        break;
+      }
+      curr = curr.parentElement;
+    }
+    if (isInactive) {
+      continue;
+    }
+
+    // 3. Check row container and status column
+    const row =
+      link.closest?.('.GroupStudent__item, .Expandable, .GroupStudent__row, tr') ||
+      link.parentElement;
+
     if (row) {
-      // 1. Check if row or any wrapper has is-inactive
+      const rowCls = row.className;
       if (
         row.classList?.contains('is-inactive') ||
-        Boolean(link.closest?.('.is-inactive'))
+        (typeof rowCls === 'string' && rowCls.includes('is-inactive'))
       ) {
         continue;
       }
 
-      // 2. Check status element inside row
-      const statusEl = row.querySelector?.('.GroupStudent__col__status, .GroupStudent__status, .student-status');
+      // Check status element inside row or surrounding item
+      const statusEl =
+        row.querySelector?.('.GroupStudent__col__status, .GroupStudent__status, .student-status') ||
+        row.parentElement?.querySelector?.('.GroupStudent__col__status, .GroupStudent__status, .student-status');
+
       if (statusEl) {
+        const statusCls = statusEl.className;
         if (
           statusEl.classList?.contains('is-inactive') ||
+          (typeof statusCls === 'string' && statusCls.includes('is-inactive')) ||
           Boolean(statusEl.closest?.('.is-inactive'))
         ) {
           continue;
         }
 
+        // Element-UI warning / danger button check (transferred, expelled, etc.)
+        if (statusEl.querySelector?.('.el-button--warning, .el-button--danger, .el-button--info')) {
+          continue;
+        }
+
         const statusText = statusEl.textContent?.trim().toLowerCase() || '';
         if (statusText) {
-          // Must contain 'зарах' (e.g. 'зарахований') and must NOT contain 'відрах'
-          if (!statusText.includes('зарах') || statusText.includes('відрах')) {
+          // Must contain 'зарах' (e.g. 'зарахований')
+          // Non-active keywords: 'перекладен' (transferred), 'відрах' (expelled), 'неактивн', 'заморожен'
+          if (
+            !statusText.includes('зарах') ||
+            statusText.includes('перекладен') ||
+            statusText.includes('відрах') ||
+            statusText.includes('неактивн') ||
+            statusText.includes('заморожен')
+          ) {
             continue;
           }
         }

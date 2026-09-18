@@ -40,10 +40,15 @@ function injectImportButton(): void {
         return;
       }
 
+      console.log(
+        `[MeetSwitcher:LMS] Successfully parsed group "${group.name}" (${group.id}) with ${group.students.length} active students:`,
+        group.students.map((s) => s.fullName)
+      );
+
       await store.saveGroup(group);
 
       btn.style.background = '#28a745';
-      btn.innerHTML = `✅ Імпортовано ${group.students.length} учнів!`;
+      btn.innerHTML = `✅ Імпортовано ${group.students.length} активних учнів!`;
       setTimeout(() => {
         btn.disabled = false;
         btn.innerHTML = '📥 Імпортувати в MeetSwitcher';
