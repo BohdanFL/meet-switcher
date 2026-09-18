@@ -309,3 +309,60 @@ test('SidePanelDecorator findPeoplePanel finds aside[aria-label="Side panel"]', 
   assert.equal(found, aside);
 });
 
+test('SidePanelDecorator standard participant row with generic pin button extracts correct name from span.zWGUib', async () => {
+  const aliasManager = new AliasManager({ enableStorageSync: false });
+  await aliasManager.setAlias('Bohdan Rubakha', 'Богдан');
+
+  const decorator = new SidePanelDecorator(aliasManager);
+
+  const row = new MockElement('div');
+  row.setAttribute('role', 'listitem');
+  row.setAttribute('aria-label', 'Bohdan Rubakha');
+
+  const textContainer = new MockElement('div');
+  textContainer.className = 'zSX24d';
+  const nameSpan = new MockElement('span', 'Bohdan Rubakha');
+  nameSpan.className = 'zWGUib';
+  textContainer.appendChild(nameSpan);
+  row.appendChild(textContainer);
+
+  // Generic pin button in Ukrainian Meet
+  const pinBtn = new MockElement('button');
+  pinBtn.setAttribute('aria-label', 'Закріпити на головному екрані');
+  row.appendChild(pinBtn);
+
+  const moreBtn = new MockElement('button');
+  moreBtn.setAttribute('aria-label', 'Додаткові дії');
+  row.appendChild(moreBtn);
+
+  const info = decorator.extractParticipantInfo(row as any);
+  assert.ok(info);
+  assert.equal(info.name, 'Bohdan Rubakha');
+  assert.equal(info.isPresentation, false);
+
+  decorator.decorateRow(row as any);
+  assert.equal(nameSpan.innerHTML.includes('Богдан'), true);
+  assert.equal(nameSpan.innerHTML.includes('(Bohdan Rubakha)'), true);
+  assert.equal(nameSpan.innerHTML.includes('презентація'), false, 'Standard participant row must not have presentation tag');
+});
+
+test('SidePanelDecorator cleans leading користувача from Ukrainian button label', async () => {
+  const aliasManager = new AliasManager({ enableStorageSync: false });
+  await aliasManager.setAlias('Богдан Рубаха', 'Бодя');
+
+  const decorator = new SidePanelDecorator(aliasManager);
+
+  // Row where name element is missing or generic, but button has "Додаткові дії для користувача Богдан Рубаха"
+  const row = new MockElement('div');
+  row.setAttribute('role', 'listitem');
+
+  const moreBtn = new MockElement('button');
+  moreBtn.setAttribute('aria-label', 'Додаткові дії для користувача Богдан Рубаха');
+  row.appendChild(moreBtn);
+
+  const info = decorator.extractParticipantInfo(row as any);
+  assert.ok(info);
+  assert.equal(info.name, 'Богдан Рубаха');
+  assert.equal(info.isPresentation, false);
+});
+

@@ -203,17 +203,18 @@ export class SidePanelDecorator {
     const candidates = Array.from(
       row.querySelectorAll<HTMLElement>('.zSX24d span, span.notranslate, span[title], span')
     );
+    const isPresentationWord = (t: string) => /^(?:presentation|презентація|презентация|трансляція)$/i.test(t);
     for (const el of candidates) {
       if (
         isIconElement(el) ||
-        (el.closest && el.closest('.BEaVse, .extHU, .Q2qrwf'))
+        (el.closest && el.closest('.BEaVse, .extHU, .Q2qrwf, button, [role="button"]'))
       ) {
         continue;
       }
       const txt = (el.textContent || '').trim();
       if (
         txt &&
-        txt !== 'Presentation' &&
+        !isPresentationWord(txt) &&
         !txt.startsWith('more_vert') &&
         !txt.startsWith('devices') &&
         !txt.startsWith('Mute')
@@ -225,87 +226,120 @@ export class SidePanelDecorator {
     return null;
   }
 
+  public isSystemPhrase(text: string): boolean {
+    if (!text || text.length <= 1) return true;
+    const lower = text.toLowerCase().trim();
+    return (
+      /^(?:presentation|презентація|презентация|трансляція)$/i.test(lower) ||
+      /^(?:more actions|more options|додаткові дії|більше дій|другие параметры)$/i.test(lower) ||
+      /^(?:more_vert|devices|keep_outline|present_to_all)$/i.test(lower) ||
+      /^(?:на головному екрані|на главном экране|to your main screen)$/i.test(lower) ||
+      /^(?:мікрофон вимкнено|микрофон отключен|microphone is off)$/i.test(lower) ||
+      /^(?:закріпити|закрепить|відкріпити|открепить|pin|unpin)$/i.test(lower) ||
+      /^(?:користувача|пользователя)$/i.test(lower)
+    );
+  }
+
+  public cleanParticipantName(rawName: string): string {
+    if (!rawName) return '';
+    return rawName
+      .replace(/^(?:користувач(?:а|ка)?|пользовател(?:я)?|user)\s*:\s*/i, '')
+      .replace(/^(?:користувач(?:а|ка)?|пользовател(?:я)?)\s+/i, '')
+      .replace(/^(?:презентація\s*:\s*|presentation\s*:\s*|презентация\s*:\s*|трансляція\s*:\s*)/i, '')
+      .replace(/\s*\(?(?:презентація|presentation|презентация|трансляція)\)?$/i, '')
+      .replace(/'s presentation$/i, '')
+      .replace(/'s microphone$/i, '')
+      .replace(/\s*\((?:You|Ви|Вы)\)$/i, '')
+      .replace(/\s*\((?:Meeting host|Організатор зустрічі|Организатор встречи)\)$/i, '')
+      .trim();
+  }
+
   public extractParticipantInfo(row: HTMLElement): ParticipantRowInfo | null {
     if (!row || typeof row.querySelectorAll !== 'function') return null;
 
+    const presentationRegex = /(?:presentation|презентац|present_to_all|трансляц)/i;
+    const rowText = (row.textContent || '') + ' ' + (row.getAttribute('aria-label') || '');
+    const buttons = Array.from(row.querySelectorAll<HTMLElement>('button, [role="button"]'));
+    const buttonLabels = buttons.map((b) => b.getAttribute('aria-label') || b.getAttribute('data-tooltip') || '').join(' ');
+    const isPresentation = presentationRegex.test(rowText + ' ' + buttonLabels);
+
     const nameEl = this.findNameElement(row);
     if (nameEl && nameEl.getAttribute('data-ms-original')) {
-      const stored = nameEl.getAttribute('data-ms-original')!;
-      const rowText = (row.textContent || '') + ' ' + (row.getAttribute('aria-label') || '');
-      const isPresentation = /(?:presentation|презентац|present_to_all|трансляц)/i.test(rowText);
       return {
-        name: stored,
+        name: nameEl.getAttribute('data-ms-original')!,
         isPresentation,
       };
     }
 
-    const buttons = Array.from(row.querySelectorAll<HTMLElement>('button, [role="button"]'));
-    const presentationRegex = /(?:presentation|презентац|present_to_all|трансляц)/i;
     let rawName = '';
-    let isPresentation = false;
 
-    // 1. Check buttons inside row for rich aria-labels
-    for (const btn of buttons) {
-      const label = btn.getAttribute('aria-label') || btn.getAttribute('data-tooltip') || '';
-      if (!label) continue;
-
-      if (presentationRegex.test(label)) {
-        isPresentation = true;
-      }
-
-      // "Mute Bohdan Rubakha's microphone" / "Mute Bohdan Rubakha's presentation"
-      const muteMatch = label.match(
-        /(?:Mute|Вимкнути мікрофон для користувача|Вимкнути мікрофон для|Вимкнути мікрофон|Вимкнути звук трансляції для користувача|Вимкнути звук трансляції для)\s+(.+?)(?:'s microphone|'s presentation|\s+презентацію|\s+трансляцію|$)/i
-      );
-      if (muteMatch && muteMatch[1]) {
-        rawName = muteMatch[1];
-        break;
-      }
-
-      // "More options for Bohdan Rubakha" / "More actions for Bohdan Rubakha" / "Додаткові дії для ..."
-      const moreMatch = label.match(
-        /(?:More options for|More actions for|Більше дій для|Додаткові дії для|Другие параметры для|Дії для)\s+(.+)/i
-      );
-      if (moreMatch && moreMatch[1]) {
-        rawName = moreMatch[1];
-        break;
-      }
-
-      // "Pin Bohdan Rubakha to your main screen"
-      const pinMatch = label.match(
-        /(?:Pin|Закріпити)\s+(.+?)(?:'s presentation|\s+to your main screen|\s+на головному екрані|\s+на екрані|$)/i
-      );
-      if (pinMatch && pinMatch[1]) {
-        rawName = pinMatch[1];
-        break;
+    // 1. Authoritative name from Google Meet name text element (.zWGUib)
+    if (nameEl && nameEl.textContent) {
+      const candidate = this.cleanParticipantName(nameEl.textContent);
+      if (candidate && !this.isSystemPhrase(candidate)) {
+        rawName = candidate;
       }
     }
 
-    // 2. Check row aria-label or name element inside row (.zWGUib)
+    // 2. Row aria-label (e.g. <div role="listitem" aria-label="Bohdan Rubakha">)
     if (!rawName) {
       const rowAria = (row.getAttribute('aria-label') || '').trim();
       if (rowAria) {
-        rawName = rowAria;
-      } else if (nameEl && nameEl.textContent) {
-        rawName = nameEl.textContent;
+        const candidate = this.cleanParticipantName(rowAria);
+        if (candidate && !this.isSystemPhrase(candidate)) {
+          rawName = candidate;
+        }
+      }
+    }
+
+    // 3. Fallback: Parse rich button aria-labels if name element was absent or obscured
+    if (!rawName) {
+      for (const btn of buttons) {
+        const label = btn.getAttribute('aria-label') || btn.getAttribute('data-tooltip') || '';
+        if (!label) continue;
+
+        // "Mute Bohdan Rubakha's microphone" / "Вимкнути мікрофон для користувача Bohdan Rubakha"
+        const muteMatch = label.match(
+          /(?:Mute|Вимкнути мікрофон для|Вимкнути мікрофон|Вимкнути звук трансляції для|Отключить микрофон для|Отключить микрофон)\s+(?:користувача\s+|пользователя\s+)?(.+?)(?:'s microphone|'s presentation|\s+презентацію|\s+трансляцію|\s+презентацию|\s+трансляцию|$)/i
+        );
+        if (muteMatch && muteMatch[1]) {
+          const candidate = this.cleanParticipantName(muteMatch[1]);
+          if (candidate && !this.isSystemPhrase(candidate)) {
+            rawName = candidate;
+            break;
+          }
+        }
+
+        // "More options for Bohdan Rubakha" / "Додаткові дії для користувача Bohdan Rubakha"
+        const moreMatch = label.match(
+          /(?:More options for|More actions for|Більше дій для|Додаткові дії для|Другие параметры для|Дії для)\s+(?:користувача\s+|пользователя\s+)?(.+)/i
+        );
+        if (moreMatch && moreMatch[1]) {
+          const candidate = this.cleanParticipantName(moreMatch[1]);
+          if (candidate && !this.isSystemPhrase(candidate)) {
+            rawName = candidate;
+            break;
+          }
+        }
+
+        // "Pin Bohdan Rubakha to your main screen" / "Закріпити користувача Bohdan Rubakha на головному екрані"
+        const pinMatch = label.match(
+          /(?:Pin|Закріпити|Закрепить)\s+(?:користувача\s+|пользователя\s+)?(.+?)(?:'s presentation|\s+to your main screen|\s+на головному екрані|\s+на главном экране|\s+на екрані|$)/i
+        );
+        if (pinMatch && pinMatch[1]) {
+          const candidate = this.cleanParticipantName(pinMatch[1]);
+          if (candidate && !this.isSystemPhrase(candidate)) {
+            rawName = candidate;
+            break;
+          }
+        }
       }
     }
 
     if (!rawName) return null;
 
-    const rowText = (row.textContent || '') + ' ' + (row.getAttribute('aria-label') || '');
-    if (presentationRegex.test(rowText)) {
-      isPresentation = true;
-    }
-
-    const cleanedName = rawName
-      .replace(/^(?:презентація\s*:\s*|presentation\s*:\s*)/i, '')
-      .replace(/\s*\(презентація\)$/i, '')
-      .replace(/\s*\(presentation\)$/i, '')
-      .replace(/'s presentation$/i, '')
-      .replace(/'s microphone$/i, '')
-      .replace(/\s*\((?:You|Ви|Вы)\)$/i, '')
-      .trim();
+    const cleanedName = this.cleanParticipantName(rawName);
+    if (!cleanedName || this.isSystemPhrase(cleanedName)) return null;
 
     return {
       name: cleanedName,
