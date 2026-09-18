@@ -61,7 +61,7 @@ function initMeetSwitcher(): void {
       if (detector.isAnyStreamPinned()) {
         console.log('[MeetSwitcher] Unpinning to expand full grid for Classroom Wall...');
         await controller.unpin();
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 400));
         detector.scan();
       }
       wall.open(detector.getScreenShares());
@@ -99,6 +99,9 @@ function initMeetSwitcher(): void {
 
   // Connect detector output to HUD, Wall, and Tile Badges
   detector.onUpdate((shares) => {
+    if (shares.length > 0) {
+      callMonitor.markMeetingJoined();
+    }
     hud.update(shares);
     if (wall.isOpen()) {
       wall.updateShares(shares);

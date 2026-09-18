@@ -53,6 +53,7 @@ export interface SessionLog {
   failedSwitches: number;
   errorCount: number;
   detectedParticipants: string[];
+  hasJoinedMeeting?: boolean;
   events: LogEvent[];
 }
 

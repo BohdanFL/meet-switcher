@@ -1,9 +1,10 @@
-import { ScreenShare } from '../../types';
-import { AliasManager } from '../alias-manager';
+import type { ScreenShare } from '../../types/index.ts';
+import { AliasManager } from '../alias-manager.ts';
 
 interface WallCardItem {
   cardEl: HTMLElement;
   videoEl: HTMLVideoElement;
+  placeholderEl?: HTMLElement;
   share: ScreenShare;
   numberEl: HTMLElement;
   nameEl: HTMLElement;
@@ -84,6 +85,14 @@ export class ClassroomWall {
     if (this.isVisible) {
       this.render();
     }
+  }
+
+  public getInitials(name: string): string {
+    const cleaned = name.replace(/[()[\]{}]/g, '').trim();
+    const parts = cleaned.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
   private buildOverlay(): void {
@@ -188,6 +197,8 @@ export class ClassroomWall {
     for (const share of this.currentShares) {
       const existing = this.cardsMap.get(share.id);
       const displayName = this.aliasManager.formatDisplayName(share.participantName);
+      const hasActiveStream = Boolean(share.isAvailableInDom && share.videoElement && share.videoElement.srcObject);
+      const initials = this.getInitials(displayName);
 
       if (existing) {
         // Update attributes without re-creating DOM or touching the playing video!
@@ -199,13 +210,22 @@ export class ClassroomWall {
         existing.statusEl.textContent = share.isPinned ? '📌 В центрі' : '';
         existing.statusEl.style.display = share.isPinned ? 'inline' : 'none';
 
-        if (
-          share.videoElement &&
-          share.videoElement.srcObject &&
-          existing.videoEl.srcObject !== share.videoElement.srcObject
-        ) {
-          existing.videoEl.srcObject = share.videoElement.srcObject;
-          existing.videoEl.play().catch(() => {});
+        if (hasActiveStream) {
+          if (existing.videoEl.srcObject !== share.videoElement!.srcObject) {
+            existing.videoEl.srcObject = share.videoElement!.srcObject;
+            existing.videoEl.play().catch(() => {});
+          }
+          existing.videoEl.style.display = 'block';
+          if (existing.placeholderEl) {
+            existing.placeholderEl.style.display = 'none';
+          }
+        } else {
+          existing.videoEl.style.display = 'none';
+          if (existing.placeholderEl) {
+            existing.placeholderEl.style.display = 'flex';
+            const avatar = existing.placeholderEl.querySelector('.wall-card-avatar');
+            if (avatar) avatar.textContent = initials;
+          }
         }
       } else {
         // Create new card for this screen share
@@ -220,7 +240,15 @@ export class ClassroomWall {
             <button class="wall-card-rename-btn" title="Перейменувати учня (встановити псевдонім)">✏️</button>
             <span class="wall-card-status" style="${share.isPinned ? '' : 'display: none;'}">📌 В центрі</span>
           </div>
-          <div class="wall-video-wrap"></div>
+          <div class="wall-video-wrap">
+            <div class="wall-card-placeholder" style="${hasActiveStream ? 'display: none;' : 'display: flex;'}">
+              <div class="wall-card-avatar">${this.escapeHtml(initials)}</div>
+              <div class="wall-card-waiting">
+                <span class="wall-card-spinner"></span>
+                <span>Очікування трансляції...</span>
+              </div>
+            </div>
+          </div>
         `;
 
         const badgeEl = card.querySelector<HTMLElement>('.wall-card-badge')!;
@@ -229,6 +257,7 @@ export class ClassroomWall {
         const renameBtn = card.querySelector<HTMLButtonElement>('.wall-card-rename-btn')!;
         const statusEl = card.querySelector<HTMLElement>('.wall-card-status')!;
         const videoWrap = card.querySelector<HTMLElement>('.wall-video-wrap')!;
+        const placeholderEl = card.querySelector<HTMLElement>('.wall-card-placeholder')!;
 
         renameBtn.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -282,8 +311,9 @@ export class ClassroomWall {
         previewVideo.autoplay = true;
         previewVideo.muted = true;
         previewVideo.playsInline = true;
+        previewVideo.style.display = hasActiveStream ? 'block' : 'none';
 
-        if (share.videoElement && share.videoElement.srcObject) {
+        if (hasActiveStream && share.videoElement?.srcObject) {
           previewVideo.srcObject = share.videoElement.srcObject;
           previewVideo.play().catch(() => {});
         }
@@ -300,6 +330,7 @@ export class ClassroomWall {
         this.cardsMap.set(share.id, {
           cardEl: card,
           videoEl: previewVideo,
+          placeholderEl,
           share,
           numberEl,
           nameEl,

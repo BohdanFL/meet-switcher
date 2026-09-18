@@ -1,6 +1,6 @@
 import { DiagnosticsLogger } from './logger.ts';
 
-const LEAVE_BUTTON_REGEX = /(?:leave call|покинути|залишити|завершити|завершить звонок|call_end|phone_missed)/i;
+const LEAVE_BUTTON_REGEX = /(?:leave call|leave meeting|end call|hang up|покинути|залишити|завершити|завершить|call_end|phone_missed)/i;
 
 const POST_CALL_REGEX = /(?:you left the meeting|you've left the meeting|ви залишили зустріч|залишили виклик|зустріч завершилася|ви вийшли з виклику|rejoin|приєднатися знову)/i;
 
@@ -20,10 +20,78 @@ export function isMeetingEndedText(text: string): boolean {
   return POST_CALL_REGEX.test(text.trim());
 }
 
+/**
+ * Helper to determine whether the user is actively inside an in-progress Google Meet meeting room
+ * (as opposed to being on the landing page or in the pre-join lobby / green room).
+ */
+export function isUserInMeeting(doc: Document = document): boolean {
+  if (!doc || !doc.body) return false;
+
+  // 1. If path is home, landing, or bye -> not in a meeting
+  if (typeof window !== 'undefined' && window.location?.pathname) {
+    const p = window.location.pathname;
+    if (p === '/' || p.startsWith('/landing') || p.startsWith('/bye')) {
+      return false;
+    }
+  }
+
+  // 2. Check for explicit Leave Call button in DOM
+  const buttons = Array.from(doc.querySelectorAll<HTMLButtonElement>('button, div[role="button"]'));
+  const hasLeaveButton = buttons.some((btn) => {
+    const label = btn.getAttribute('aria-label') || btn.getAttribute('data-tooltip') || btn.textContent || '';
+    return isLeaveButtonLabel(label);
+  });
+  if (hasLeaveButton) {
+    return true;
+  }
+
+  // 3. Check for specific Google Meet in-call layout indicators (not present in lobby)
+  const inCallSelectors = [
+    '[data-meeting-title]',
+    '[data-call-state]',
+    'div[role="region"][aria-label*="call controls" i]',
+    'div[role="region"][aria-label*="керування викликом" i]',
+    'div[role="region"][aria-label*="управление вызовом" i]',
+    '[data-participant-id]',
+    '[data-requested-participant-id]',
+    '[data-allocation-index]',
+    'button[aria-label*="unpin" i]',
+    'button[aria-label*="відкріп" i]',
+    'button[aria-label*="откреп" i]',
+    '.ink-canvas-parent',
+    '.ink-layer-container',
+  ];
+
+  for (const selector of inCallSelectors) {
+    if (doc.querySelector(selector)) {
+      return true;
+    }
+  }
+
+  // 4. Check for in-call specific buttons (like Raise Hand, Captions)
+  const hasInCallAction = buttons.some((btn) => {
+    const label = (btn.getAttribute('aria-label') || btn.getAttribute('data-tooltip') || '').toLowerCase();
+    return (
+      label.includes('raise hand') ||
+      label.includes('підняти руку') ||
+      label.includes('поднять руку') ||
+      label.includes('turn on captions') ||
+      label.includes('увімкнути субтитри') ||
+      label.includes('включить субтитры')
+    );
+  });
+  if (hasInCallAction) {
+    return true;
+  }
+
+  return false;
+}
+
 export class CallMonitor {
   private logger: DiagnosticsLogger;
   private isMonitoring = false;
   private hasExported = false;
+  private hasJoinedMeeting = false;
   private observer: MutationObserver | null = null;
   private clickListener: ((e: MouseEvent) => void) | null = null;
   private unloadListener: (() => void) | null = null;
@@ -32,9 +100,29 @@ export class CallMonitor {
     this.logger = logger || DiagnosticsLogger.getInstance();
   }
 
+  public isInMeeting(): boolean {
+    return this.hasJoinedMeeting;
+  }
+
+  public getHasExported(): boolean {
+    return this.hasExported;
+  }
+
+  public markMeetingJoined(): void {
+    if (this.hasJoinedMeeting) return;
+    this.hasJoinedMeeting = true;
+    this.logger.setMeetingJoined(true);
+    this.logger.log('SYSTEM', 'User joined Google Meet meeting room.');
+  }
+
   public start(): void {
     if (this.isMonitoring || typeof window === 'undefined') return;
     this.isMonitoring = true;
+
+    // Check initial state in case script loaded after join
+    if (typeof document !== 'undefined' && isUserInMeeting(document)) {
+      this.markMeetingJoined();
+    }
 
     // 1. Listen for clicks on the red Leave Call button
     this.clickListener = (e: MouseEvent) => {
@@ -46,6 +134,7 @@ export class CallMonitor {
 
       const label = btn.getAttribute('aria-label') || btn.getAttribute('data-tooltip') || btn.textContent || '';
       if (isLeaveButtonLabel(label)) {
+        this.markMeetingJoined();
         this.logger.log('SYSTEM', `Leave call button clicked: "${label.trim()}"`);
         // Slight timeout to let user confirm any "End for everyone" dialog if opened
         setTimeout(() => {
@@ -55,9 +144,19 @@ export class CallMonitor {
     };
     document.addEventListener('click', this.clickListener, true);
 
-    // 2. Observe DOM for post-call "You left the meeting" screen or URL change
+    // 2. Observe DOM for meeting join and post-call "You left the meeting" screen or URL change
     this.observer = new MutationObserver(() => {
       if (this.hasExported) return;
+
+      // Check if user has entered the meeting
+      if (!this.hasJoinedMeeting) {
+        if (isUserInMeeting(document)) {
+          this.markMeetingJoined();
+        } else {
+          // While user has not entered meeting room, ignore exit screens and landing URLs
+          return;
+        }
+      }
 
       // Check URL
       if (window.location.pathname.includes('/landing') || window.location.pathname.includes('/bye')) {
@@ -79,6 +178,10 @@ export class CallMonitor {
 
     // 3. Page unload fallback
     this.unloadListener = () => {
+      // Do NOT export or persist sessions if the meeting was never entered
+      if (!this.hasJoinedMeeting) {
+        return;
+      }
       this.logger.persistToStorage().catch(() => {});
       if (!this.hasExported) {
         this.triggerAutoExport('tab_closed');
@@ -110,8 +213,11 @@ export class CallMonitor {
   /**
    * Trigger automatic file download of the full lesson timeline.
    */
-  public triggerAutoExport(reason: string): void {
+  public triggerAutoExport(reason: string, force = false): void {
     if (this.hasExported) return;
+    if (!this.hasJoinedMeeting && !force && reason !== 'manual_console_trigger') {
+      return;
+    }
     this.hasExported = true;
 
     this.logger.log('SYSTEM', `Triggering automatic post-call log export. Reason: ${reason}`);
@@ -120,6 +226,10 @@ export class CallMonitor {
     const json = this.logger.exportSessionJson();
     const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
     const filename = `meet-switcher-log-${dateStr}.json`;
+
+    if (typeof document === 'undefined' || !document.body) {
+      return;
+    }
 
     try {
       // 1. Direct browser synthetic download

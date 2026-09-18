@@ -18,6 +18,7 @@ export class DiagnosticsLogger {
   private startTimestamp: number;
   private syncTimer: any = null;
   private isEnded = false;
+  private hasJoinedMeeting = false;
   private participantSet = new Set<string>();
 
   constructor(config?: LoggerConfig) {
@@ -47,6 +48,9 @@ export class DiagnosticsLogger {
       this.syncTimer = setInterval(() => {
         this.persistToStorage().catch(() => {});
       }, 10000);
+      if (typeof this.syncTimer?.unref === 'function') {
+        this.syncTimer.unref();
+      }
     }
   }
 
@@ -100,6 +104,15 @@ export class DiagnosticsLogger {
     return event;
   }
 
+  public setMeetingJoined(joined = true): void {
+    this.hasJoinedMeeting = joined;
+    this.session.hasJoinedMeeting = joined;
+  }
+
+  public isMeetingJoined(): boolean {
+    return this.hasJoinedMeeting;
+  }
+
   /**
    * Record a student switch action.
    */
@@ -109,6 +122,7 @@ export class DiagnosticsLogger {
     success: boolean,
     reason?: string
   ): void {
+    this.setMeetingJoined(true);
     this.session.totalSwitches++;
     if (success) {
       this.session.successfulSwitches++;
@@ -126,7 +140,9 @@ export class DiagnosticsLogger {
    * Track newly identified presentation participant name.
    */
   public recordParticipantFound(name: string): void {
-    if (!name || this.participantSet.has(name)) return;
+    if (!name) return;
+    this.setMeetingJoined(true);
+    if (this.participantSet.has(name)) return;
     this.participantSet.add(name);
     this.session.detectedParticipants = Array.from(this.participantSet);
     this.log('SCAN', `Registered participant screen: ${name}`);
@@ -240,7 +256,9 @@ export class DiagnosticsLogger {
     this.session.durationSeconds = Math.round((Date.now() - this.startTimestamp) / 1000);
     this.log('SYSTEM', `Call ended. Duration: ${this.session.durationSeconds}s, switches: ${this.session.totalSwitches}`);
 
-    this.persistToStorage().catch(() => {});
+    if (this.hasJoinedMeeting || this.session.detectedParticipants.length > 0 || this.session.totalSwitches > 0) {
+      this.persistToStorage().catch(() => {});
+    }
     return this.getSession();
   }
 
@@ -248,17 +266,26 @@ export class DiagnosticsLogger {
    * Persist current session into chrome.storage.local rolling history.
    */
   public async persistToStorage(): Promise<void> {
+    const chromeObj = typeof chrome !== 'undefined' ? chrome : (globalThis as any).chrome;
     if (
       !this.config.enableStorageSync ||
-      typeof chrome === 'undefined' ||
-      !chrome.storage?.local
+      !chromeObj?.storage?.local
+    ) {
+      return;
+    }
+
+    // Do not persist unjoined ghost sessions to storage
+    if (
+      !this.hasJoinedMeeting &&
+      this.session.detectedParticipants.length === 0 &&
+      this.session.totalSwitches === 0
     ) {
       return;
     }
 
     try {
       const sessionData = this.getSession();
-      const current = await chrome.storage.local.get(STORAGE_KEY_SESSIONS);
+      const current = await chromeObj.storage.local.get(STORAGE_KEY_SESSIONS);
       const sessions: SessionLog[] = Array.isArray(current[STORAGE_KEY_SESSIONS])
         ? current[STORAGE_KEY_SESSIONS]
         : [];
@@ -276,7 +303,7 @@ export class DiagnosticsLogger {
         sessions.length = this.config.maxStoredSessions;
       }
 
-      await chrome.storage.local.set({ [STORAGE_KEY_SESSIONS]: sessions });
+      await chromeObj.storage.local.set({ [STORAGE_KEY_SESSIONS]: sessions });
     } catch (err) {
       console.warn('[MeetSwitcher] Failed to persist session to chrome.storage.local', err);
     }

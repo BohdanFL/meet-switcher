@@ -66,6 +66,9 @@ class MockElement {
       if (selector.includes('mock-student-tile') && curr.classList.contains('mock-student-tile')) {
         return curr;
       }
+      if (selector.includes('data-participant-id') && curr.getAttribute('data-participant-id')) {
+        return curr;
+      }
       curr = curr.parentElement;
     }
     return null;
@@ -320,4 +323,81 @@ test('markAllUnpinned clears expected pinned participant', () => {
   assert.equal(detector.extractParticipantName(stageTile as any), 'Учень / Presentation');
 });
 
+test('Rejects annotation notice strings as participant names', () => {
+  const detector = new ScreenDetector();
+  assert.equal(detector.isValidParticipantName('Everyone can see your annotations'), false);
+  assert.equal(detector.isValidParticipantName('Усі можуть бачити ваші анотації'), false);
+  assert.equal(detector.isValidParticipantName('Все могут видеть ваши аннотации'), false);
+  assert.equal(detector.isValidParticipantName('Try annotating'), false);
+});
+
+test('Identifies and filters out teacher own presentation from student shares', () => {
+  const detector = new ScreenDetector();
+  assert.equal(detector.isTeacherScreenName('Ваш екран (Ви)'), true);
+  assert.equal(detector.isTeacherScreenName('Your presentation'), true);
+  assert.equal(detector.isTeacherScreenName('Богдан Рубаха (Your Presentation)'), true);
+  assert.equal(detector.isTeacherScreenName('Ваша презентація'), true);
+  assert.equal(detector.isTeacherScreenName('Aleksey Priymak'), false);
+  assert.equal(detector.isTeacherScreenName('Ольга Коваль'), false);
+});
+
+test('Replaces inactive participant slot when new stream arrives for same participant', () => {
+  const detector = new ScreenDetector();
+
+  // 1. First presentation from Aleksey Priymak
+  const tile1 = new MockElement('div');
+  tile1.setAttribute('data-participant-id', 'device-362');
+  const video1 = new MockElement('video');
+  const btn1 = new MockElement('button');
+  btn1.setAttribute('aria-label', "Pin Aleksey Priymak's presentation to your main screen");
+  tile1.appendChild(btn1);
+  tile1.appendChild(video1);
+
+  // Directly test internal registry update logic via scan
+  (globalThis as any).document = {
+    querySelectorAll: (sel: string) => (sel.includes('video') ? [video1] : []),
+    querySelector: () => null,
+  };
+
+  detector.scan();
+  const shares1 = detector.getScreenShares();
+  assert.equal(shares1.length, 1);
+  assert.equal(shares1[0].participantName, 'Aleksey Priymak');
+  assert.equal(shares1[0].index, 1);
+
+  // 2. Stream goes inactive (0 videos in DOM)
+  (globalThis as any).document = {
+    querySelectorAll: () => [],
+    querySelector: () => null,
+  };
+  detector.scan();
+  const sharesInactive = detector.getScreenShares();
+  assert.equal(sharesInactive.length, 1);
+  assert.equal(sharesInactive[0].isAvailableInDom, false);
+
+  // 3. Aleksey Priymak reconnects with new device ID (device-363)
+  const tile2 = new MockElement('div');
+  tile2.setAttribute('data-participant-id', 'device-363');
+  const video2 = new MockElement('video');
+  const btn2 = new MockElement('button');
+  btn2.setAttribute('aria-label', "Pin Aleksey Priymak's presentation to your main screen");
+  tile2.appendChild(btn2);
+  tile2.appendChild(video2);
+
+  (globalThis as any).document = {
+    querySelectorAll: (sel: string) => (sel.includes('video') ? [video2] : []),
+    querySelector: () => null,
+  };
+  detector.scan();
+
+  const shares2 = detector.getScreenShares();
+  // Must NOT create a second slot! Must reuse slot 1 for Aleksey Priymak
+  assert.equal(shares2.length, 1);
+  assert.equal(shares2[0].participantName, 'Aleksey Priymak');
+  assert.equal(shares2[0].index, 1);
+  assert.equal(shares2[0].isAvailableInDom, true);
+  assert.equal(shares2[0].id, 'device-363:pres');
+
+  delete (globalThis as any).document;
+});
 

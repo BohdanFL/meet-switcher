@@ -44,3 +44,35 @@ test('DiagnosticsLogger exports valid session JSON with statistics', () => {
   assert.deepEqual(data.detectedParticipants, ['Alex', 'Maria']);
   assert.equal(data.events.length, 5);
 });
+
+test('DiagnosticsLogger tracks meeting joined state and guards persistToStorage', async () => {
+  let storedData: any = null;
+  (globalThis as any).chrome = {
+    storage: {
+      local: {
+        get: async () => ({ meet_switcher_diagnostic_sessions: [] }),
+        set: async (val: any) => {
+          storedData = val;
+        },
+      },
+    },
+  };
+
+  const logger = new DiagnosticsLogger({ enableStorageSync: true });
+  assert.equal(logger.isMeetingJoined(), false);
+
+  // Attempting persist when meeting not joined should do nothing
+  await logger.persistToStorage();
+  assert.equal(storedData, null);
+
+  // Mark joined and try again
+  logger.setMeetingJoined(true);
+  assert.equal(logger.isMeetingJoined(), true);
+  await logger.persistToStorage();
+  assert.ok(storedData?.meet_switcher_diagnostic_sessions);
+  assert.equal(storedData.meet_switcher_diagnostic_sessions.length, 1);
+
+  logger.endSession();
+  delete (globalThis as any).chrome;
+});
+

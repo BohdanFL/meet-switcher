@@ -56,7 +56,9 @@ export const SYSTEM_NAME_PATTERNS: RegExp[] = [
   /не можна увімкнути/i,
   /невозможно включить/i,
   /keep_outline/i,
-  /keep_off/i,
+  /everyone can see your annotations/i,
+  /усі можуть бачити ваші анотації/i,
+  /все могут видеть ваши аннотации/i,
   /mic_off/i,
   /mic_none/i,
   /volume_off/i,
@@ -273,6 +275,10 @@ export class ScreenDetector {
             '';
 
           const participantName = this.extractParticipantName(tile);
+          if (this.isTeacherScreenName(participantName) || !this.isValidParticipantName(participantName)) {
+            continue;
+          }
+
           const tileId = participantId
             ? `${participantId}:pres`
             : `pres-${participantName.toLowerCase().replace(/\s+/g, '-')}`;
@@ -298,8 +304,35 @@ export class ScreenDetector {
         }
       }
 
+      // Consolidate rawList: if a fallback pres- tile matches a device ID tile with same name, merge them
+      const consolidatedRawList: RawTile[] = [];
+      for (const raw of rawList) {
+        const norm = this.normalizeParticipantName(raw.participantName);
+        const existingIdx = consolidatedRawList.findIndex(
+          (r) => this.normalizeParticipantName(r.participantName) === norm
+        );
+        if (existingIdx >= 0) {
+          const existing = consolidatedRawList[existingIdx];
+          // Prefer tile with real device ID or explicit pin button
+          if (raw.id.includes(':pres') && !raw.id.startsWith('pres-')) {
+            consolidatedRawList[existingIdx] = {
+              ...raw,
+              isPinned: existing.isPinned || raw.isPinned,
+              pinButton: raw.pinButton || existing.pinButton,
+              unpinButton: raw.unpinButton || existing.unpinButton,
+            };
+          } else {
+            existing.isPinned = existing.isPinned || raw.isPinned;
+            existing.pinButton = existing.pinButton || raw.pinButton;
+            existing.unpinButton = existing.unpinButton || raw.unpinButton;
+          }
+        } else {
+          consolidatedRawList.push(raw);
+        }
+      }
+
       // Determine whether ANY presentation is currently pinned
-      const isAnyPinned = rawList.some((r) => r.isPinned) || this.isAnyStreamPinned();
+      const isAnyPinned = consolidatedRawList.some((r) => r.isPinned) || this.isAnyStreamPinned();
 
       // Assign stable slot indices (1..9)
       const usedSlots = new Set(this.participantSlots.values());
@@ -316,72 +349,69 @@ export class ScreenDetector {
       const activeCanonicalIds = new Set<string>();
 
       // Update freshly scanned presentation tiles
-      for (const raw of rawList) {
+      for (const raw of consolidatedRawList) {
         if (raw.videoElement) {
           this.knownPresentationVideos.add(raw.videoElement);
         }
 
-        // Deduplication: match by raw.id OR by normalized participant name
         const normName = this.normalizeParticipantName(raw.participantName);
         const isGenericName = this.isGenericFallbackName(raw.participantName);
-        let canonicalId = raw.id;
 
-        if (!this.knownShares.has(raw.id) && !isGenericName) {
-          for (const [id, known] of this.knownShares.entries()) {
-            if (this.normalizeParticipantName(known.participantName) === normName) {
-              canonicalId = id;
+        let slot = this.participantSlots.get(raw.id);
+        let existingShare = this.knownShares.get(raw.id);
+
+        // Reconnect / slot migration: if this participant had a previous inactive slot under another ID
+        if (!existingShare && !isGenericName) {
+          for (const [oldId, known] of Array.from(this.knownShares.entries())) {
+            if (
+              !known.isAvailableInDom &&
+              this.normalizeParticipantName(known.participantName) === normName
+            ) {
+              slot = this.participantSlots.get(oldId);
+              this.knownShares.delete(oldId);
+              this.lastSeenMap.delete(oldId);
+              this.participantSlots.delete(oldId);
+              existingShare = known;
+              this.logger.log('SCAN', `Reconnected stream for "${raw.participantName}": migrated slot ${slot} from ${oldId} to ${raw.id}`);
               break;
             }
           }
         }
 
-        if (!this.participantSlots.has(canonicalId)) {
-          this.participantSlots.set(canonicalId, getNextFreeSlot());
+        if (!slot) {
+          slot = getNextFreeSlot();
         }
+        this.participantSlots.set(raw.id, slot);
 
-        const slot = this.participantSlots.get(canonicalId)!;
-        const existingShare = this.knownShares.get(canonicalId);
-
-        // Preserve previous valid name if current is generic fallback
         const effectiveName =
           isGenericName && existingShare && !this.isGenericFallbackName(existingShare.participantName)
             ? existingShare.participantName
             : raw.participantName;
 
-        this.knownShares.set(canonicalId, {
+        this.knownShares.set(raw.id, {
           ...raw,
-          id: canonicalId,
+          id: raw.id,
           participantName: effectiveName,
           index: slot,
           isAvailableInDom: true,
         });
-        this.lastSeenMap.set(canonicalId, now);
-        activeCanonicalIds.add(canonicalId);
+        this.lastSeenMap.set(raw.id, now);
+        activeCanonicalIds.add(raw.id);
       }
 
       // Handle previously known shares that are NOT in the current DOM scan
       for (const [id, share] of Array.from(this.knownShares.entries())) {
         if (!activeCanonicalIds.has(id)) {
-          if (isAnyPinned) {
-            // Meet is in sidebar mode (only ~2-3 tiles rendered). NEVER DELETE other students!
-            // Retain them in knownShares with isAvailableInDom = false.
-            share.isPinned = false;
-            share.isAvailableInDom = false;
-            // While a stream is pinned, refresh lastSeen so time in sidebar doesn't count against timeout
-            this.lastSeenMap.set(id, now);
-          } else {
-            // Meet is in full grid view.
-            // Prune ONLY if missing for > 90,000ms (90 seconds grace period)
-            const lastSeen = this.lastSeenMap.get(id) || 0;
-            if (now - lastSeen > 90000) {
-              this.knownShares.delete(id);
-              this.lastSeenMap.delete(id);
-              this.participantSlots.delete(id);
-              this.logger.log('SCAN', `Removed inactive participant screen (90s timeout): ${share.participantName}`);
-            } else {
-              share.isPinned = false;
-              share.isAvailableInDom = false;
-            }
+          share.isPinned = false;
+          share.isAvailableInDom = false;
+
+          // Prune ONLY if missing for > 90,000ms (90 seconds grace period)
+          const lastSeen = this.lastSeenMap.get(id) || 0;
+          if (now - lastSeen > 90000) {
+            this.knownShares.delete(id);
+            this.lastSeenMap.delete(id);
+            this.participantSlots.delete(id);
+            this.logger.log('SCAN', `Removed inactive participant screen (90s timeout): ${share.participantName}`);
           }
         }
       }
@@ -715,6 +745,18 @@ export class ScreenDetector {
   private isGenericFallbackName(name: string): boolean {
     const n = name.trim().toLowerCase();
     return n === 'учень / presentation' || n === 'учень' || n === 'presentation' || n === 'unknown';
+  }
+
+  public isTeacherScreenName(name: string): boolean {
+    if (!name) return false;
+    const lower = name.toLowerCase();
+    return (
+      lower.includes('ваш екран') ||
+      lower.includes('ваша презентація') ||
+      lower.includes('your presentation') ||
+      lower.includes('ви транслюєте') ||
+      lower.includes('you are presenting')
+    );
   }
 
   private cleanParticipantName(raw: string): string {

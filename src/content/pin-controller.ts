@@ -1,6 +1,6 @@
-import { ScreenShare } from '../types';
-import { ScreenDetector } from './detector';
-import { AnimationKiller } from './animation-killer';
+import type { ScreenShare } from '../types/index.ts';
+import { ScreenDetector } from './detector.ts';
+import { AnimationKiller } from './animation-killer.ts';
 import { DiagnosticsLogger } from '../diagnostics/logger.ts';
 
 export class PinController {
@@ -125,10 +125,34 @@ export class PinController {
 
       // If off-screen (because Google Meet in sidebar mode only renders ~3 tiles):
       if (!isInDom) {
+        this.logger.log('ACTION', `Tile off-screen, attempting People panel pinning for "${target.participantName}"`);
+
+        const pinnedViaPanel = await this.pinViaPeoplePanel(target.participantName);
+        if (pinnedViaPanel) {
+          const elapsedMs = Date.now() - switchStartTime;
+          this.logger.recordSwitch(target.participantName, target.index, true);
+          this.logger.log('ACTION', `Successfully switched to [${target.index}] "${target.participantName}" via People panel in ${elapsedMs}ms`);
+
+          // Clean up any previously pinned screens (if multi-pin kept them)
+          const allShares = this.detector.getScreenShares();
+          for (const share of allShares) {
+            if (share.id !== target.id && share.isPinned && share.tileElement && document.body?.contains(share.tileElement)) {
+              this.hoverTile(share.tileElement);
+              const otherUnpin = this.detector.findUnpinButton(share.tileElement);
+              if (otherUnpin) {
+                this.dispatchFullClick(otherUnpin);
+              }
+            }
+          }
+
+          setTimeout(() => this.detector.scan(), 100);
+          return true;
+        }
+
         console.log(
-          `[MeetSwitcher] Tile for "${target.participantName}" is off-screen. Expanding Meet grid...`
+          `[MeetSwitcher] People panel pinning unavailable or failed for "${target.participantName}". Expanding Meet grid...`
         );
-        this.logger.log('ACTION', `Tile off-screen in sidebar, expanding grid for "${target.participantName}"`);
+        this.logger.log('ACTION', `People panel pinning failed, expanding grid for "${target.participantName}"`);
         await this.unpinActiveStreams();
         this.detector.markAllUnpinned();
 
@@ -144,7 +168,7 @@ export class PinController {
             s.index === target.index ||
             this.detector.normalizeParticipantName(s.participantName) === targetNorm
           );
-          if (refreshed?.tileElement && document.body.contains(refreshed.tileElement)) {
+          if (refreshed?.tileElement && document.body?.contains(refreshed.tileElement)) {
             currentTile = refreshed.tileElement;
             target = refreshed;
             isInDom = true;
@@ -218,7 +242,17 @@ export class PinController {
         return true;
       }
 
-      // FALLBACK PATH: Unpin active streams and retry
+      // FALLBACK PATH 1: Try People side panel pinning if direct pin button was not found on tile
+      const panelPinned = await this.pinViaPeoplePanel(target.participantName);
+      if (panelPinned) {
+        const elapsedMs = Date.now() - switchStartTime;
+        this.logger.recordSwitch(target.participantName, target.index, true);
+        this.logger.log('ACTION', `Successfully switched to [${target.index}] "${target.participantName}" via People panel fallback in ${elapsedMs}ms`);
+        setTimeout(() => this.detector.scan(), 100);
+        return true;
+      }
+
+      // FALLBACK PATH 2: Unpin active streams and retry
       console.log(`[MeetSwitcher] Direct pin not found, unpinning active streams and retrying...`);
       this.logger.log('ACTION', `Direct pin button not found, falling back to global unpin and retry for "${target.participantName}"`);
       await this.unpinActiveStreams();
@@ -316,34 +350,273 @@ export class PinController {
   }
 
   /**
+   * Checks if Google Meet's "People" ("Учасники") side panel is currently open.
+   */
+  public isPeoplePanelOpen(doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): boolean {
+    const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
+    if (!targetDoc?.querySelector) return false;
+
+    const peopleBtn = targetDoc.querySelector<HTMLButtonElement>(
+      'button[aria-label*="People" i], button[aria-label*="учасник" i], button[aria-label*="люди" i], button[aria-label*="show everyone" i], button[aria-label*="показати всіх" i]'
+    );
+    if (peopleBtn) {
+      const isPressed = peopleBtn.getAttribute('aria-pressed') === 'true';
+      const hasClass = Boolean(peopleBtn.classList?.contains && peopleBtn.classList.contains('qs41qe'));
+      if (isPressed || hasClass) {
+        return true;
+      }
+      return false;
+    }
+
+    const panel = targetDoc.querySelector(
+      'div[role="tabpanel"][aria-label*="People" i], div[role="tabpanel"][aria-label*="учасник" i], div[role="tabpanel"][aria-label*="люди" i], div[role="list"][aria-label*="Participants" i]'
+    );
+    return Boolean(panel);
+  }
+
+  /**
+   * Ensures Google Meet's People side panel is open.
+   */
+  public async openPeoplePanel(doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): Promise<boolean> {
+    if (this.isPeoplePanelOpen(doc)) return true;
+    const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
+    if (!targetDoc?.querySelector) return false;
+
+    const peopleBtn = targetDoc.querySelector<HTMLButtonElement>(
+      'button[aria-label*="People" i], button[aria-label*="учасник" i], button[aria-label*="люди" i], button[aria-label*="show everyone" i], button[aria-label*="показати всіх" i]'
+    );
+    if (!peopleBtn) {
+      this.logger.log('WARN', 'Could not locate People button to open side panel');
+      return false;
+    }
+
+    this.logger.log('ACTION', 'Opening People side panel to locate off-screen presentation');
+    this.dispatchFullClick(peopleBtn);
+
+    for (let i = 0; i < 8; i++) {
+      await this.sleep(50);
+      if (this.isPeoplePanelOpen(doc)) {
+        return true;
+      }
+    }
+    return this.isPeoplePanelOpen(doc);
+  }
+
+  /**
+   * Finds the presentation list item corresponding to participantName in the People panel.
+   */
+  public findPresentationItemInPeoplePanel(participantName: string, doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): HTMLElement | null {
+    const normTarget = this.detector.normalizeParticipantName(participantName);
+    if (!normTarget) return null;
+
+    const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
+    if (!targetDoc) return null;
+
+    // Search inside People tabpanel or whole document
+    const panel: any =
+      (targetDoc.querySelector && (
+        targetDoc.querySelector<HTMLElement>('div[role="tabpanel"]') ||
+        targetDoc.querySelector<HTMLElement>('div[aria-label*="People" i], div[aria-label*="учасник" i], div[aria-label*="люди" i], aside')
+      )) ||
+      (targetDoc as any).body ||
+      targetDoc;
+
+    if (!panel || typeof panel.querySelectorAll !== 'function') return null;
+
+    const items: HTMLElement[] = Array.from(
+      panel.querySelectorAll(
+        'div[role="listitem"], li[role="listitem"], div[data-participant-id], div[data-requested-participant-id]'
+      )
+    ) as HTMLElement[];
+
+    const presentationRegex = /(?:presentation|презентац|present_to_all|трансляц)/i;
+
+    // Pass 1: Item text / aria matches participant name and contains presentation keyword
+    for (const item of items) {
+      const text = item.textContent || '';
+      const aria = item.getAttribute('aria-label') || '';
+      const combined = `${text} ${aria}`.toLowerCase();
+      const normCombined = this.detector.normalizeParticipantName(combined);
+
+      if (normCombined.includes(normTarget) || combined.includes(participantName.toLowerCase())) {
+        if (presentationRegex.test(combined)) {
+          return item;
+        }
+
+        const presChild = item.querySelector && item.querySelector(
+          'i, span, [aria-label*="presentation" i], [aria-label*="презентац" i]'
+        );
+        if (presChild) {
+          const childText = (presChild.textContent || '').toLowerCase();
+          const childAria = (presChild.getAttribute('aria-label') || '').toLowerCase();
+          if (presentationRegex.test(childText) || presentationRegex.test(childAria)) {
+            return item;
+          }
+        }
+      }
+    }
+
+    // Pass 2: Button inside item has aria-label mentioning participant AND presentation
+    for (const item of items) {
+      const buttons: HTMLButtonElement[] = Array.from(item.querySelectorAll('button')) as HTMLButtonElement[];
+      for (const btn of buttons) {
+        const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+        if (
+          (aria.includes(normTarget) || aria.includes(participantName.toLowerCase())) &&
+          presentationRegex.test(aria)
+        ) {
+          return item;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Finds the Pin button inside a People panel presentation row.
+   */
+  public findPinButtonInItem(item: HTMLElement): HTMLButtonElement | null {
+    if (!item.querySelectorAll) return null;
+    const buttons = Array.from(item.querySelectorAll<HTMLButtonElement>('button'));
+    const pinRegex = /(?:pin|закріпити|прикріпити|keep)/i;
+
+    for (const btn of buttons) {
+      const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+      const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
+      const text = (btn.textContent || '').toLowerCase();
+
+      const isUnpin = aria.includes('unpin') || aria.includes('відкріпити') || aria.includes('открепить') || tooltip.includes('unpin');
+      if (isUnpin) continue;
+
+      if (pinRegex.test(aria) || pinRegex.test(tooltip) || text.includes('keep')) {
+        return btn;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Pins a participant's presentation reliably using Google Meet's People side panel.
+   */
+  public async pinViaPeoplePanel(participantName: string, doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): Promise<boolean> {
+    const isOpen = await this.openPeoplePanel(doc);
+    if (!isOpen) {
+      this.logger.log('WARN', `Failed to open People panel for pinning "${participantName}"`);
+      return false;
+    }
+
+    // Poll up to 400ms for the presentation row to appear
+    let item: HTMLElement | null = null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      item = this.findPresentationItemInPeoplePanel(participantName, doc);
+      if (item) break;
+      await this.sleep(50);
+    }
+
+    if (!item) {
+      this.logger.log('WARN', `Could not find presentation item in People panel for "${participantName}"`);
+      return false;
+    }
+
+    this.hoverTile(item);
+    await this.sleep(30);
+
+    let pinBtn = this.findPinButtonInItem(item);
+    if (!pinBtn) {
+      for (let i = 0; i < 4; i++) {
+        await this.sleep(40);
+        this.hoverTile(item);
+        pinBtn = this.findPinButtonInItem(item);
+        if (pinBtn) break;
+      }
+    }
+
+    if (!pinBtn) {
+      // Look for 3-dots menu button inside item
+      const moreBtn = item.querySelector && item.querySelector<HTMLButtonElement>(
+        'button[aria-label*="More" i], button[aria-label*="інші дії" i], button[aria-label*="більше" i], button[data-tooltip*="More" i]'
+      );
+      const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
+      if (moreBtn && targetDoc?.querySelectorAll) {
+        this.dispatchFullClick(moreBtn);
+        await this.sleep(50);
+        const menuItems = Array.from(
+          targetDoc.querySelectorAll<HTMLElement>('[role="menuitem"], [role="option"]')
+        );
+        const menuPin = menuItems.find((m) => {
+          const t = (m.textContent || '').toLowerCase();
+          const a = (m.getAttribute('aria-label') || '').toLowerCase();
+          return (t.includes('pin') || t.includes('закріпити') || a.includes('pin') || a.includes('закріпити')) &&
+            !t.includes('unpin') && !a.includes('unpin') && !t.includes('відкріпити');
+        });
+        if (menuPin) {
+          this.dispatchFullClick(menuPin);
+          await this.handlePinMenuIfOpened(doc);
+          this.detector.setExpectedPinnedParticipant(participantName);
+          return true;
+        }
+      }
+
+      this.logger.log('WARN', `Pin button not found inside People panel item for "${participantName}"`);
+      return false;
+    }
+
+    this.logger.log('ACTION', `Dispatched Pin click in People panel for "${participantName}"`);
+    this.dispatchFullClick(pinBtn);
+    await this.handlePinMenuIfOpened(doc);
+    this.detector.setExpectedPinnedParticipant(participantName);
+    return true;
+  }
+
+  /**
    * Dispatches realistic Pointer & Mouse events with real center coordinates.
    * Google Meet's internal JSAction requires real event sequences to execute clicks.
    */
   private dispatchFullClick(element: HTMLElement): void {
     try {
-      element.focus();
+      element.focus?.();
     } catch {
       // Ignore focus errors
     }
 
-    const rect = element.getBoundingClientRect();
+    const rect = element.getBoundingClientRect ? element.getBoundingClientRect() : { left: 0, top: 0, width: 100, height: 100 };
     const clientX = rect.left + rect.width / 2;
     const clientY = rect.top + rect.height / 2;
 
-    const eventInit: MouseEventInit = {
+    const win = typeof window !== 'undefined' ? window : undefined;
+    const eventInit: any = {
       bubbles: true,
       cancelable: true,
-      view: window,
+      view: win,
       clientX: clientX || 100,
       clientY: clientY || 100,
       button: 0,
     };
 
-    element.dispatchEvent(new PointerEvent('pointerdown', eventInit));
-    element.dispatchEvent(new MouseEvent('mousedown', eventInit));
-    element.dispatchEvent(new PointerEvent('pointerup', eventInit));
-    element.dispatchEvent(new MouseEvent('mouseup', eventInit));
-    element.dispatchEvent(new MouseEvent('click', eventInit));
+    try {
+      if (typeof PointerEvent !== 'undefined') {
+        element.dispatchEvent(new PointerEvent('pointerdown', eventInit));
+      }
+      if (typeof MouseEvent !== 'undefined') {
+        element.dispatchEvent(new MouseEvent('mousedown', eventInit));
+      }
+      if (typeof PointerEvent !== 'undefined') {
+        element.dispatchEvent(new PointerEvent('pointerup', eventInit));
+      }
+      if (typeof MouseEvent !== 'undefined') {
+        element.dispatchEvent(new MouseEvent('mouseup', eventInit));
+        element.dispatchEvent(new MouseEvent('click', eventInit));
+      } else if (element.dispatchEvent) {
+        element.dispatchEvent({ type: 'click', ...eventInit } as any);
+      }
+    } catch {
+      try {
+        (element as any).click?.();
+      } catch {
+        // Ignore fallback click errors
+      }
+    }
   }
 
   /**
@@ -371,12 +644,15 @@ export class PinController {
    * STRICT SAFETY: NEVER clicks "For everyone" / "Для всіх".
    * Selects "For myself only" / "Лише для мене".
    */
-  private async handlePinMenuIfOpened(): Promise<boolean> {
+  private async handlePinMenuIfOpened(doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): Promise<boolean> {
+    const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
+    if (!targetDoc?.querySelectorAll) return false;
+
     for (let i = 0; i < 5; i++) {
       await this.sleep(40);
 
       const menus = Array.from(
-        document.querySelectorAll<HTMLElement>(
+        targetDoc.querySelectorAll<HTMLElement>(
           'div[role="menu"], ul[role="menu"], div[role="dialog"], div.VfPpkd-xl07Ob-XxIAqe'
         )
       );
@@ -440,21 +716,30 @@ export class PinController {
    * Hover over a tile element with real coordinates to trigger Meet's action buttons.
    */
   private hoverTile(element: HTMLElement): void {
-    const rect = element.getBoundingClientRect();
+    const rect = element.getBoundingClientRect ? element.getBoundingClientRect() : { left: 0, top: 0, width: 100, height: 100 };
     const clientX = rect.left + rect.width / 2;
     const clientY = rect.top + rect.height / 2;
 
-    const eventInit: MouseEventInit = {
+    const win = typeof window !== 'undefined' ? window : undefined;
+    const eventInit: any = {
       bubbles: true,
       cancelable: true,
-      view: window,
+      view: win,
       clientX: clientX || 100,
       clientY: clientY || 100,
     };
 
     const mouseEvents = ['mouseenter', 'mouseover', 'mousemove'];
     for (const type of mouseEvents) {
-      element.dispatchEvent(new MouseEvent(type, eventInit));
+      try {
+        if (typeof MouseEvent !== 'undefined') {
+          element.dispatchEvent(new MouseEvent(type, eventInit));
+        } else if (element.dispatchEvent) {
+          element.dispatchEvent({ type, ...eventInit } as any);
+        }
+      } catch {
+        // Ignore hover errors in non-browser env
+      }
     }
   }
 
