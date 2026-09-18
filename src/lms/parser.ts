@@ -38,6 +38,38 @@ export function parseLmsGroupPage(doc: ParentNode, pageUrl: string): StudentGrou
 
     const studentId = match[1];
     if (seenIds.has(studentId)) continue;
+
+    // Filter out inactive students (with is-inactive class or non-enrolled status)
+    const row = link.closest?.('.GroupStudent__item, .Expandable, tr, .GroupStudent__row') || link.parentElement;
+    if (row) {
+      // 1. Check if row or any wrapper has is-inactive
+      if (
+        row.classList?.contains('is-inactive') ||
+        Boolean(link.closest?.('.is-inactive'))
+      ) {
+        continue;
+      }
+
+      // 2. Check status element inside row
+      const statusEl = row.querySelector?.('.GroupStudent__col__status, .GroupStudent__status, .student-status');
+      if (statusEl) {
+        if (
+          statusEl.classList?.contains('is-inactive') ||
+          Boolean(statusEl.closest?.('.is-inactive'))
+        ) {
+          continue;
+        }
+
+        const statusText = statusEl.textContent?.trim().toLowerCase() || '';
+        if (statusText) {
+          // Must contain 'зарах' (e.g. 'зарахований') and must NOT contain 'відрах'
+          if (!statusText.includes('зарах') || statusText.includes('відрах')) {
+            continue;
+          }
+        }
+      }
+    }
+
     seenIds.add(studentId);
 
     const fullName = link.textContent?.trim() || `Учень ${studentId}`;

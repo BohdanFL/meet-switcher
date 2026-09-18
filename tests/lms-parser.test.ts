@@ -76,3 +76,64 @@ test('parseLmsGroupPage handles missing elements gracefully', () => {
   const result = parseLmsGroupPage(mockDoc, 'https://lms.alg.academy/other/page');
   assert.equal(result, null);
 });
+
+test('parseLmsGroupPage filters out inactive students (with is-inactive class or non-enrolled status)', () => {
+  const activeStudentRow = {
+    classList: { contains: (c: string) => c === 'GroupStudent__item' },
+    querySelector: (sel: string) => {
+      if (sel.includes('status')) {
+        return {
+          textContent: 'зарахований 01.09.2026',
+          classList: { contains: () => false },
+          closest: () => null,
+        };
+      }
+      return null;
+    },
+    closest: () => null,
+  };
+
+  const inactiveStudentRow = {
+    classList: { contains: (c: string) => c === 'GroupStudent__item' || c === 'is-inactive' },
+    querySelector: (sel: string) => {
+      if (sel.includes('status')) {
+        return {
+          textContent: 'відрахований 10.09.2026',
+          classList: { contains: (c: string) => c === 'is-inactive' },
+          closest: () => null,
+        };
+      }
+      return null;
+    },
+    closest: () => null,
+  };
+
+  const activeLink = {
+    getAttribute: (k: string) => (k === 'href' ? '/student/update/1111111' : null),
+    textContent: 'Учень Активний',
+    closest: (sel: string) => (sel.includes('is-inactive') ? null : activeStudentRow),
+    parentElement: activeStudentRow,
+  };
+
+  const inactiveLink = {
+    getAttribute: (k: string) => (k === 'href' ? '/student/update/2222222' : null),
+    textContent: 'Учень Відрахований',
+    closest: (sel: string) => (sel.includes('is-inactive') ? inactiveStudentRow : inactiveStudentRow),
+    parentElement: inactiveStudentRow,
+  };
+
+  const mockDoc = {
+    querySelector: (sel: string) => {
+      if (sel.includes('GroupCard__header__title')) return { textContent: 'Тестова Група' };
+      if (sel.includes('#group-view')) return { getAttribute: () => '12345' };
+      return null;
+    },
+    querySelectorAll: () => [activeLink, inactiveLink],
+  } as any;
+
+  const group = parseLmsGroupPage(mockDoc, 'https://lms.alg.academy/group/view/12345#group-student-grid');
+  assert.ok(group);
+  assert.equal(group.students.length, 1);
+  assert.equal(group.students[0].id, '1111111');
+  assert.equal(group.students[0].fullName, 'Учень Активний');
+});
