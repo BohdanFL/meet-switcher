@@ -858,3 +858,240 @@
   transform: translateY(-1px);
 }
 
+/* ===================================================
+   Attendance Modal Overlay Styles
+   =================================================== */
+
+.attendance-modal-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(13, 14, 18, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 10000001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.attendance-modal-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.attendance-dialog {
+  width: 480px;
+  max-width: 90vw;
+  max-height: 85vh;
+  background: #202124;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.attendance-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #2d2e30;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 10px;
+}
+
+.attendance-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.attendance-icon {
+  font-size: 16px;
+}
+
+.attendance-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.attendance-group-select {
+  flex: 1;
+  background: #18191d;
+  color: #e8eaed;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  outline: none;
+  min-width: 140px;
+  text-overflow: ellipsis;
+}
+
+.attendance-close-btn {
+  background: transparent;
+  border: none;
+  color: #9aa0a6;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.attendance-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.attendance-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+
+.stat-present { color: #81c995; }
+.stat-absent { color: #f28b82; }
+.stat-total { color: #9aa0a6; }
+
+.attendance-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px;
+  max-height: 50vh;
+}
+
+.attendance-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.15s ease;
+}
+
+.attendance-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.status-toggle-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  font-weight: 800;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.status-plus {
+  background: #1e4620;
+  color: #81c995;
+}
+
+.status-plus:hover {
+  background: #2e6630;
+}
+
+.status-minus {
+  background: #3c4043;
+  color: #9aa0a6;
+}
+
+.status-minus:hover {
+  background: #5f6368;
+  color: #f28b82;
+}
+
+.student-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.student-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.student-fullname {
+  font-weight: 600;
+  color: #e8eaed;
+  font-size: 13px;
+}
+
+.student-lms-link {
+  color: #8ab4f8;
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.student-lms-link:hover {
+  text-decoration: underline;
+}
+
+.student-meet-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.paired-acc {
+  color: #8ab4f8;
+}
+
+.unpaired-acc {
+  color: #fdd663;
+}
+
+.manual-tag {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: #9aa0a6;
+}
+
+.attendance-footer {
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: #28292c;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.attendance-copy-btn {
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.attendance-copy-btn:hover {
+  background: #185abc;
+}
+
