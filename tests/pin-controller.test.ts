@@ -69,6 +69,23 @@ class MockElement {
 
   focus() {}
   scrollIntoView() {}
+
+  closest(selector: string): MockElement | null {
+    let curr: MockElement | null = this;
+    while (curr) {
+      if (selector.includes('role="listitem"') && curr.getAttribute('role') === 'listitem') {
+        return curr;
+      }
+      if (selector.includes('role="row"') && curr.getAttribute('role') === 'row') {
+        return curr;
+      }
+      if (selector.includes('data-participant-id') && curr.getAttribute('data-participant-id')) {
+        return curr;
+      }
+      curr = curr.parentElement;
+    }
+    return null;
+  }
 }
 
 test('isPeoplePanelOpen detects open state by button aria-pressed and tabpanel', () => {

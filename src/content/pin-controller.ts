@@ -412,26 +412,45 @@ export class PinController {
     const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
     if (!targetDoc) return null;
 
-    // Search inside People tabpanel or whole document
+    // Search inside People/In call container, Side panel aside, or whole document
+    // NOTE: Avoid bare 'div[role="tabpanel"]' as it matches the Activities/Add-ons panel!
     const panel: any =
       (targetDoc.querySelector && (
-        targetDoc.querySelector<HTMLElement>('div[role="tabpanel"]') ||
-        targetDoc.querySelector<HTMLElement>('div[aria-label*="People" i], div[aria-label*="учасник" i], div[aria-label*="люди" i], aside')
+        targetDoc.querySelector<HTMLElement>('[aria-label="In call"], [aria-label*="дзвінк" i], [aria-label*="вызов" i]') ||
+        targetDoc.querySelector<HTMLElement>('aside[aria-label*="Side panel" i], aside') ||
+        targetDoc.querySelector<HTMLElement>('div[aria-label*="People" i], div[aria-label*="учасник" i], div[aria-label*="люди" i]')
       )) ||
       (targetDoc as any).body ||
       targetDoc;
 
     if (!panel || typeof panel.querySelectorAll !== 'function') return null;
 
+    const presentationRegex = /(?:presentation|презентац|present_to_all|трансляц)/i;
+
+    // Pass 1: Direct presentation action buttons (e.g. "Mute Bohdan Rubakha's presentation")
+    const allButtons: HTMLElement[] = Array.from(panel.querySelectorAll('button, [role="button"]'));
+    for (const btn of allButtons) {
+      const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+      if (
+        (aria.includes(normTarget) || aria.includes(participantName.toLowerCase())) &&
+        presentationRegex.test(aria)
+      ) {
+        const row =
+          (typeof btn.closest === 'function' &&
+            btn.closest('div[role="listitem"], [role="row"], div[data-participant-id]')) ||
+          btn.parentElement?.parentElement ||
+          btn.parentElement;
+        if (row) return row as HTMLElement;
+      }
+    }
+
+    // Pass 2: List items matching participant name and presentation keyword
     const items: HTMLElement[] = Array.from(
       panel.querySelectorAll(
         'div[role="listitem"], li[role="listitem"], div[data-participant-id], div[data-requested-participant-id]'
       )
     ) as HTMLElement[];
 
-    const presentationRegex = /(?:presentation|презентац|present_to_all|трансляц)/i;
-
-    // Pass 1: Item text / aria matches participant name and contains presentation keyword
     for (const item of items) {
       const text = item.textContent || '';
       const aria = item.getAttribute('aria-label') || '';
@@ -456,27 +475,11 @@ export class PinController {
       }
     }
 
-    // Pass 2: Button inside item has aria-label mentioning participant AND presentation
-    for (const item of items) {
-      const buttons: HTMLElement[] = Array.from(
-        item.querySelectorAll<HTMLElement>('button, [role="button"]')
-      );
-      for (const btn of buttons) {
-        const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
-        if (
-          (aria.includes(normTarget) || aria.includes(participantName.toLowerCase())) &&
-          presentationRegex.test(aria)
-        ) {
-          return item;
-        }
-      }
-    }
-
     return null;
   }
 
   /**
-   * Finds the Pin button inside a People panel presentation row.
+   * Finds the Pin button inside a People panel presentation row (if directly visible).
    */
   public findPinButtonInItem(item: HTMLElement): HTMLElement | null {
     if (!item.querySelectorAll) return null;
@@ -530,67 +533,77 @@ export class PinController {
     this.hoverTile(item);
     await this.sleep(30);
 
+    // 1. If direct pin button is visible, click it
     let pinBtn = this.findPinButtonInItem(item);
     if (!pinBtn) {
-      for (let i = 0; i < 4; i++) {
-        await this.sleep(40);
+      for (let i = 0; i < 3; i++) {
+        await this.sleep(30);
         this.hoverTile(item);
         pinBtn = this.findPinButtonInItem(item);
         if (pinBtn) break;
       }
     }
 
-    if (!pinBtn) {
-      // Look for 3-dots menu button inside item (button or div[role="button"] with more/actions label or more_vert icon)
-      let moreBtn = item.querySelector<HTMLElement>(
-        'button[aria-label*="More" i], [role="button"][aria-label*="More" i], button[aria-label*="дії" i], [role="button"][aria-label*="дії" i], button[aria-label*="більше" i], [role="button"][aria-label*="більше" i], button[aria-label*="параметр" i], [role="button"][aria-label*="параметр" i], button[data-tooltip*="More" i], [data-tooltip*="More" i]'
-      );
-
-      if (!moreBtn) {
-        const allCandidates = Array.from(item.querySelectorAll<HTMLElement>('button, [role="button"], i, span'));
-        const iconEl = allCandidates.find((el) => {
-          const t = (el.textContent || '').trim();
-          const a = (el.getAttribute('aria-label') || '').toLowerCase();
-          return t === 'more_vert' || a.includes('more_vert') || a.includes('інші дії') || a.includes('додаткові дії');
-        });
-        moreBtn = iconEl?.closest<HTMLElement>('button, [role="button"]') || null;
-      }
-
-      const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
-      if (moreBtn && targetDoc?.querySelectorAll) {
-        this.dispatchFullClick(moreBtn);
-        await this.sleep(60);
-        const menuItems = Array.from(
-          targetDoc.querySelectorAll<HTMLElement>('[role="menuitem"], [role="option"], li[role="menuitem"], div[role="menuitem"]')
-        );
-        const menuPin = menuItems.find((m) => {
-          const t = (m.textContent || '').toLowerCase();
-          const a = (m.getAttribute('aria-label') || '').toLowerCase();
-          return (
-            (t.includes('pin') || t.includes('закріпити') || a.includes('pin') || a.includes('закріпити') || t.includes('keep')) &&
-            !t.includes('unpin') &&
-            !a.includes('unpin') &&
-            !t.includes('відкріпити') &&
-            !t.includes('открепить')
-          );
-        });
-        if (menuPin) {
-          this.dispatchFullClick(menuPin);
-          await this.handlePinMenuIfOpened(doc);
-          this.detector.setExpectedPinnedParticipant(participantName);
-          return true;
-        }
-      }
-
-      this.logger.log('WARN', `Pin button not found inside People panel item for "${participantName}"`);
-      return false;
+    if (pinBtn) {
+      this.logger.log('ACTION', `Dispatched direct Pin click in People panel for "${participantName}"`);
+      this.dispatchFullClick(pinBtn);
+      await this.handlePinMenuIfOpened(doc);
+      this.detector.setExpectedPinnedParticipant(participantName);
+      return true;
     }
 
-    this.logger.log('ACTION', `Dispatched Pin click in People panel for "${participantName}"`);
-    this.dispatchFullClick(pinBtn);
-    await this.handlePinMenuIfOpened(doc);
-    this.detector.setExpectedPinnedParticipant(participantName);
-    return true;
+    // 2. Click "More actions" (3-dots) on the presentation row and select "Pin to screen"
+    const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
+    const rowButtons = Array.from(item.querySelectorAll<HTMLElement>('button, [role="button"]'));
+    const moreBtn =
+      rowButtons.find((b) => {
+        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+        const text = (b.textContent || '').trim();
+        return (
+          aria.includes('more action') ||
+          aria.includes('дії') ||
+          aria.includes('більше') ||
+          text === 'more_vert' ||
+          aria.includes('more_vert')
+        );
+      }) ||
+      (item.querySelector &&
+        item.querySelector<HTMLElement>(
+          'button[aria-label*="More" i], [role="button"][aria-label*="More" i], [data-tooltip*="More" i]'
+        ));
+
+    if (moreBtn && targetDoc?.querySelectorAll) {
+      this.dispatchFullClick(moreBtn);
+      await this.sleep(80);
+
+      const menuItems = Array.from(
+        targetDoc.querySelectorAll<HTMLElement>(
+          '[role="menuitem"], [role="option"], li[role="menuitem"], div[role="menuitem"]'
+        )
+      );
+      const menuPin = menuItems.find((m) => {
+        const t = (m.textContent || '').toLowerCase();
+        const a = (m.getAttribute('aria-label') || '').toLowerCase();
+        return (
+          (t.includes('pin') || t.includes('закріп') || a.includes('pin') || a.includes('закріп') || t.includes('keep')) &&
+          !t.includes('unpin') &&
+          !a.includes('unpin') &&
+          !t.includes('відкріпити') &&
+          !t.includes('открепить')
+        );
+      });
+
+      if (menuPin) {
+        this.logger.log('ACTION', `Selected Pin option in More actions menu for "${participantName}"`);
+        this.dispatchFullClick(menuPin);
+        await this.handlePinMenuIfOpened(doc);
+        this.detector.setExpectedPinnedParticipant(participantName);
+        return true;
+      }
+    }
+
+    this.logger.log('WARN', `Pin button and More actions menu not found inside People panel item for "${participantName}"`);
+    return false;
   }
 
   /**
@@ -771,31 +784,3 @@ export class PinController {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
-
-    (() => {
-      console.log("=== [MeetSwitcher: People Panel Test] ===");
-      const panel = document.querySelector('div[role="tabpanel"], div[aria-label*="People" i],
-  div[aria-label*="учасник" i]');
-      if (!panel) {
-        console.warn("Панель учасників не знайдена! Будь ласка, відкрийте бічну панель у Meet.");
-        return;
-      }
-      console.log("Панель знайдено: ТАК");
-
-      const rows = Array.from(panel.querySelectorAll('div[role="listitem"],
-  li[role="listitem"]'));
-      console.log("Кількість рядків у списку:", rows.length);
-
-      rows.forEach((row, i) => {
-        const text = (row.textContent || "").replace(/\s+/g, " ").trim();
-        const buttons = Array.from(row.querySelectorAll('button, [role="button"]'));
-        const btnInfo = buttons.map(b => b.getAttribute("aria-label") || b.textContent?.trim() ||
-  "кнопка");
-        const isPres = /presentation|презентац|present_to_all|трансляц/i.test(text + " " +
-  btnInfo.join(" "));
-
-        console.log("Рядок " + (i + 1) + (isPres ? " [ПРЕЗЕНТАЦІЯ]: " : " [УЧЕНЬ]: ") + text.
-  slice(0, 45));
-        console.log("   Кнопки (" + buttons.length + "):", btnInfo);
-      });
-    })();
