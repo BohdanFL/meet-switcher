@@ -24,7 +24,7 @@ declare global {
   }
 }
 
-function initMeetSwitcher(): void {
+async function initMeetSwitcher(): Promise<void> {
   if (window.__MEET_SWITCHER_INITIALIZED__) {
     return;
   }
@@ -83,7 +83,7 @@ function initMeetSwitcher(): void {
   };
   const hotkeys = new HotkeyManager(controller);
   const aliasManager = AliasManager.getInstance();
-  aliasManager.init();
+  await aliasManager.init();
   const tileDecorator = new TileBadgeDecorator(aliasManager);
   tileDecorator.start();
   const sidePanelDecorator = new SidePanelDecorator(aliasManager);
@@ -201,8 +201,10 @@ function initMeetSwitcher(): void {
 
 // Initialize when DOM is interactive or complete
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initMeetSwitcher);
+  document.addEventListener('DOMContentLoaded', () => {
+    initMeetSwitcher().catch((err) => console.error('[MeetSwitcher] Init error:', err));
+  });
 } else {
-  initMeetSwitcher();
+  initMeetSwitcher().catch((err) => console.error('[MeetSwitcher] Init error:', err));
 }
 

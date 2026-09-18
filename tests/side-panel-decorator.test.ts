@@ -7,7 +7,7 @@ import { AliasManager } from '../src/content/alias-manager.ts';
 class MockElement {
   public tagName: string;
   public textContent: string;
-  public innerHTML: string;
+  private _innerHTML: string = '';
   public className: string;
   public title: string = '';
   public attributes: Record<string, string> = {};
@@ -18,8 +18,21 @@ class MockElement {
   constructor(tagName: string, textContent = '') {
     this.tagName = tagName.toUpperCase();
     this.textContent = textContent;
-    this.innerHTML = textContent;
     this.className = '';
+    this.innerHTML = textContent;
+  }
+
+  get innerHTML(): string {
+    return this._innerHTML;
+  }
+
+  set innerHTML(val: string) {
+    this._innerHTML = val;
+    if (val.includes('ms-alias-name')) {
+      const aliasSpan = new MockElement('span');
+      aliasSpan.className = 'ms-alias-name';
+      this.children = [aliasSpan];
+    }
   }
 
   setAttribute(name: string, value: string) {
@@ -66,9 +79,12 @@ class MockElement {
         const matches = parts.some((p) => {
           if (p.startsWith('.') && child.className.includes(p.slice(1))) return true;
           if (p === 'button' && child.tagName === 'BUTTON') return true;
+          if (p === 'aside' && child.tagName === 'ASIDE') return true;
           if (p.includes('role="button"') && (child.getAttribute('role') === 'button' || child.tagName === 'BUTTON')) return true;
           if (p.includes('role="listitem"') && child.getAttribute('role') === 'listitem') return true;
           if (p.includes('.notranslate') && child.className.includes('notranslate')) return true;
+          if (p.includes('.ms-alias-name') && child.className.includes('ms-alias-name')) return true;
+          if (p.includes('Side panel') && child.getAttribute('aria-label')?.toLowerCase().includes('side panel')) return true;
           if (p === 'span' && child.tagName === 'SPAN') return true;
           return false;
         });
@@ -227,5 +243,69 @@ test('SidePanelDecorator specifically targets span.zWGUib and ignores icon insid
   assert.equal(nameSpan.getAttribute('data-ms-original'), 'Bohdan Rubakha');
   assert.equal(nameSpan.innerHTML.includes('Богдан'), true);
   assert.equal(nameSpan.innerHTML.includes('Bohdan Rubakha'), true);
+});
+
+test('SidePanelDecorator presentation row includes (презентація) tag', async () => {
+  const aliasManager = new AliasManager({ enableStorageSync: false });
+  await aliasManager.setAlias('Bohdan Rubakha', 'Бодя');
+
+  const decorator = new SidePanelDecorator(aliasManager);
+
+  const row = new MockElement('div');
+  const nameSpan = new MockElement('span', 'Bohdan Rubakha');
+  nameSpan.className = 'notranslate';
+  row.appendChild(nameSpan);
+
+  const presBtn = new MockElement('button');
+  presBtn.setAttribute('aria-label', "Mute Bohdan Rubakha's presentation");
+  row.appendChild(presBtn);
+
+  decorator.decorateRow(row as any);
+
+  assert.equal(nameSpan.innerHTML.includes('презентація'), true);
+});
+
+test('SidePanelDecorator recovers from Wiz re-render (self-healing after plain text reset)', async () => {
+  const aliasManager = new AliasManager({ enableStorageSync: false });
+  await aliasManager.setAlias('Bohdan Rubakha', 'Богдан');
+
+  const decorator = new SidePanelDecorator(aliasManager);
+
+  const row = new MockElement('div');
+  row.setAttribute('role', 'listitem');
+
+  const nameSpan = new MockElement('span', 'Bohdan Rubakha');
+  nameSpan.className = 'zWGUib';
+  row.appendChild(nameSpan);
+
+  // 1. Initial decoration
+  decorator.decorateRow(row as any);
+  assert.equal(nameSpan.innerHTML.includes('Богдан'), true);
+  assert.equal(nameSpan.getAttribute('data-ms-formatted')?.includes('Богдан'), true);
+
+  // 2. Simulate Google Meet Wiz framework wiping out innerHTML back to plain text
+  // but leaving custom attributes untouched
+  nameSpan.innerHTML = 'Bohdan Rubakha';
+  nameSpan.children = []; // lost .ms-alias-name
+
+  // 3. Decorator runs again on next scan / mutation / heartbeat
+  decorator.decorateRow(row as any);
+
+  // Self-healing should re-inject .ms-alias-name
+  assert.equal(nameSpan.innerHTML.includes('Богдан'), true, 'Should re-inject alias span after Wiz reset');
+  assert.ok(nameSpan.querySelector('.ms-alias-name'), 'ms-alias-name should be present');
+});
+
+test('SidePanelDecorator findPeoplePanel finds aside[aria-label="Side panel"]', () => {
+  const decorator = new SidePanelDecorator(new AliasManager({ enableStorageSync: false }));
+
+  const fakeDoc = new MockElement('body');
+  const aside = new MockElement('aside');
+  aside.setAttribute('aria-label', 'Side panel');
+  fakeDoc.appendChild(aside);
+
+  const found = decorator.findPeoplePanel(fakeDoc as any);
+  assert.ok(found);
+  assert.equal(found, aside);
 });
 

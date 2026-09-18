@@ -11,37 +11,92 @@ export interface ParticipantRowInfo {
 export class SidePanelDecorator {
   private aliasManager: AliasManager;
   private observer: MutationObserver | null = null;
-  private debounceTimer: number | null = null;
+  private debounceTimer: any = null;
+  private intervalTimer: any = null;
+  private scheduledTimers: Set<any> = new Set();
   private unsubscribeAlias: (() => void) | null = null;
+  private clickListener: ((e: MouseEvent) => void) | null = null;
+  private scrollListener: ((e: Event) => void) | null = null;
 
   constructor(aliasManager?: AliasManager) {
     this.aliasManager = aliasManager || AliasManager.getInstance();
   }
 
+  private scheduleUpdate(delayMs: number, doc: Document): void {
+    const timerHost = typeof window !== 'undefined' ? window : (globalThis as any);
+    if (!timerHost.setTimeout) return;
+    const timer = timerHost.setTimeout(() => {
+      this.scheduledTimers.delete(timer);
+      this.update(doc);
+    }, delayMs);
+    this.scheduledTimers.add(timer);
+  }
+
+  private scheduleDebouncedUpdate(delayMs: number, doc: Document): void {
+    const timerHost = typeof window !== 'undefined' ? window : (globalThis as any);
+    if (this.debounceTimer && timerHost.clearTimeout) {
+      timerHost.clearTimeout(this.debounceTimer);
+    }
+    if (!timerHost.setTimeout) return;
+    this.debounceTimer = timerHost.setTimeout(() => {
+      this.debounceTimer = null;
+      this.update(doc);
+    }, delayMs);
+  }
+
   public start(doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): void {
     this.update(doc);
+
+    // Staggered initial updates to handle delayed DOM rendering when joining/re-entering a meeting
+    this.scheduleUpdate(200, doc);
+    this.scheduleUpdate(600, doc);
+    this.scheduleUpdate(1200, doc);
+    this.scheduleUpdate(2500, doc);
 
     // Subscribe to alias changes
     this.unsubscribeAlias = this.aliasManager.onUpdate(() => {
       this.update(doc);
     });
 
+    // Listen to user clicks on the page (e.g. clicking the People button in Meet toolbar)
+    if (typeof doc.addEventListener === 'function') {
+      this.clickListener = () => {
+        this.scheduleDebouncedUpdate(80, doc);
+        this.scheduleUpdate(250, doc);
+        this.scheduleUpdate(600, doc);
+      };
+      doc.addEventListener('click', this.clickListener as any, true);
+
+      this.scrollListener = () => {
+        this.scheduleDebouncedUpdate(60, doc);
+      };
+      doc.addEventListener('scroll', this.scrollListener as any, { capture: true, passive: true } as any);
+    }
+
     // Observe document for side panel mounting, opening, or row virtualization
     if (typeof MutationObserver !== 'undefined' && doc.body) {
       this.observer = new MutationObserver(() => {
-        if (this.debounceTimer) {
-          window.clearTimeout(this.debounceTimer);
-        }
-        this.debounceTimer = window.setTimeout(() => {
-          this.update(doc);
-        }, 80);
+        this.scheduleDebouncedUpdate(80, doc);
       });
 
       this.observer.observe(doc.body, {
         childList: true,
         subtree: true,
-        attributes: false,
+        attributes: true,
+        attributeFilter: ['aria-hidden', 'aria-pressed', 'aria-expanded', 'class', 'style', 'data-participant-id', 'data-requested-participant-id'],
+        characterData: true,
       });
+    }
+
+    // Lightweight periodic heartbeat (1.5s) to guarantee persistent decoration during active call
+    const timerHost = typeof window !== 'undefined' ? window : (globalThis as any);
+    if (timerHost.setInterval) {
+      this.intervalTimer = timerHost.setInterval(() => {
+        const panel = this.findPeoplePanel(doc);
+        if (panel) {
+          this.update(doc);
+        }
+      }, 1500);
     }
   }
 
@@ -50,10 +105,28 @@ export class SidePanelDecorator {
       this.observer.disconnect();
       this.observer = null;
     }
-    if (this.debounceTimer && typeof window !== 'undefined') {
-      window.clearTimeout(this.debounceTimer);
+    if (this.clickListener && typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+      document.removeEventListener('click', this.clickListener as any, true);
+      this.clickListener = null;
+    }
+    if (this.scrollListener && typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+      document.removeEventListener('scroll', this.scrollListener as any, true);
+      this.scrollListener = null;
+    }
+    const timerHost = typeof window !== 'undefined' ? window : (globalThis as any);
+    if (this.debounceTimer && timerHost.clearTimeout) {
+      timerHost.clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
+    if (this.intervalTimer && timerHost.clearInterval) {
+      timerHost.clearInterval(this.intervalTimer);
+      this.intervalTimer = null;
+    }
+    for (const t of this.scheduledTimers) {
+      if (timerHost.clearTimeout) timerHost.clearTimeout(t);
+    }
+    this.scheduledTimers.clear();
+
     if (this.unsubscribeAlias) {
       this.unsubscribeAlias();
       this.unsubscribeAlias = null;
@@ -65,9 +138,9 @@ export class SidePanelDecorator {
     if (!doc || typeof doc.querySelector !== 'function') return null;
 
     return (
-      doc.querySelector<HTMLElement>('[aria-label="In call"], [aria-label*="дзвінк" i], [aria-label*="вызов" i]') ||
       doc.querySelector<HTMLElement>('aside[aria-label*="Side panel" i], aside') ||
       doc.querySelector<HTMLElement>('div[aria-label*="People" i], div[aria-label*="учасник" i], div[aria-label*="люди" i]') ||
+      doc.querySelector<HTMLElement>('[aria-label="In call"], [aria-label*="дзвінк" i], [aria-label*="вызов" i]') ||
       null
     );
   }
@@ -208,9 +281,14 @@ export class SidePanelDecorator {
       }
     }
 
-    // 2. Check name element inside row (.zWGUib)
-    if (!rawName && nameEl && nameEl.textContent) {
-      rawName = nameEl.textContent;
+    // 2. Check row aria-label or name element inside row (.zWGUib)
+    if (!rawName) {
+      const rowAria = (row.getAttribute('aria-label') || '').trim();
+      if (rowAria) {
+        rawName = rowAria;
+      } else if (nameEl && nameEl.textContent) {
+        rawName = nameEl.textContent;
+      }
     }
 
     if (!rawName) return null;
@@ -237,9 +315,10 @@ export class SidePanelDecorator {
 
   public update(doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): void {
     const panel = this.findPeoplePanel(doc);
-    if (!panel) return;
+    const target = panel || (doc && doc.body ? doc.body : null);
+    if (!target) return;
 
-    const rows = this.findParticipantRows(panel);
+    const rows = this.findParticipantRows(target as HTMLElement);
     for (const row of rows) {
       this.decorateRow(row);
     }
@@ -268,11 +347,21 @@ export class SidePanelDecorator {
     if (alias) {
       nameEl.setAttribute('data-ms-original', originalName);
 
-      const combinedText = `${alias} (${originalName})`;
+      const presTag = info.isPresentation ? ' (презентація)' : '';
+      const combinedText = `${alias} (${originalName})${presTag}`;
 
-      if (nameEl.getAttribute('data-ms-formatted') !== combinedText) {
+      // Self-healing check: verify BOTH that data-ms-formatted matches AND .ms-alias-name is currently in DOM
+      const hasAliasSpan =
+        typeof nameEl.querySelector === 'function' &&
+        nameEl.querySelector('.ms-alias-name') !== null;
+      const hasFormattedAttr = nameEl.getAttribute('data-ms-formatted') === combinedText;
+
+      if (!hasAliasSpan || !hasFormattedAttr) {
         nameEl.setAttribute('data-ms-formatted', combinedText);
-        nameEl.innerHTML = `<span class="ms-alias-name" style="font-weight: 500;">${this.escapeHtml(alias)}</span> <span class="ms-original-name" style="opacity: 0.72; font-weight: normal;">(${this.escapeHtml(originalName)})</span>`;
+        const presHtml = info.isPresentation
+          ? ` <span class="ms-pres-tag" style="opacity: 0.72; font-weight: normal;">(презентація)</span>`
+          : '';
+        nameEl.innerHTML = `<span class="ms-alias-name" style="font-weight: 500;">${this.escapeHtml(alias)}</span> <span class="ms-original-name" style="opacity: 0.72; font-weight: normal;">(${this.escapeHtml(originalName)})</span>${presHtml}`;
         nameEl.title = `MeetSwitcher: Псевдонім "${alias}" для "${originalName}". Натисніть двічі, щоб змінити.`;
 
         // Double click allows quick alias editing
