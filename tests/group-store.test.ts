@@ -137,3 +137,47 @@ test('GroupStore merges new import preserving existing pairings', async () => {
   assert.equal(result.students[0].meetOriginalName, 'Iryna Alfeldi');
   assert.equal(result.students[0].shortAlias, 'Камалія');
 });
+
+test('GroupStore syncs imported groups and student aliases to meet_switcher_student_groups and aliases storage', async () => {
+  const fakeStorage: Record<string, any> = {};
+  (globalThis as any).chrome = {
+    storage: {
+      sync: {
+        get: async (key: string) => ({ [key]: fakeStorage[key] }),
+        set: async (obj: Record<string, any>) => Object.assign(fakeStorage, obj),
+      },
+    },
+  };
+
+  try {
+    const store = new GroupStore({ enableStorageSync: true });
+    await store.saveGroup({
+      id: '2595601',
+      name: 'УКР_Гейм_ЧТ_19:00',
+      lmsUrl: 'https://lms.alg.academy/group/view/2595601',
+      updatedAt: 1000,
+      students: [
+        {
+          id: '6753930',
+          fullName: 'Альфелді Камалія',
+          lmsUrl: 'https://lms.alg.academy/student/update/6753930',
+          meetOriginalName: 'Iryna Alfeldi',
+          shortAlias: 'Камалія',
+        },
+      ],
+    });
+
+    // Verify group was added to groups list for popup
+    assert.ok(fakeStorage['meet_switcher_student_groups']);
+    assert.ok(fakeStorage['meet_switcher_student_groups'].includes('УКР_Гейм_ЧТ_19:00'));
+
+    // Verify student was added to aliases for popup
+    assert.ok(fakeStorage['meet_switcher_student_aliases']);
+    const aliasEntry = fakeStorage['meet_switcher_student_aliases']['iryna alfeldi'];
+    assert.ok(aliasEntry);
+    assert.equal(aliasEntry.alias, 'Камалія');
+    assert.equal(aliasEntry.group, 'УКР_Гейм_ЧТ_19:00');
+  } finally {
+    delete (globalThis as any).chrome;
+  }
+});

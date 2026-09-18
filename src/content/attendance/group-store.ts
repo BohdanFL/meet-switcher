@@ -3,6 +3,11 @@ import {
   type StudentGroupMap,
   STORAGE_KEY_LMS_GROUPS,
 } from '../../types/attendance.ts';
+import {
+  STORAGE_KEY_GROUPS,
+  STORAGE_KEY_ALIASES,
+  type StudentAliasMap,
+} from '../../types/alias.ts';
 
 export interface GroupStoreOptions {
   enableStorageSync?: boolean;
@@ -95,6 +100,7 @@ export class GroupStore {
     };
 
     await this.persist();
+    await this.syncToAliasesAndGroups(this.groups[group.id]);
     this.notifyListeners();
   }
 
@@ -160,6 +166,7 @@ export class GroupStore {
     group.updatedAt = Date.now();
 
     await this.persist();
+    await this.syncToAliasesAndGroups(group);
     this.notifyListeners();
   }
 
@@ -214,6 +221,58 @@ export class GroupStore {
       } catch (localErr) {
         console.error('[MeetSwitcher:GroupStore] Storage save failed completely:', localErr);
       }
+    }
+  }
+
+  private async syncToAliasesAndGroups(group: StudentGroup): Promise<void> {
+    if (!this.enableStorageSync || typeof chrome === 'undefined') return;
+
+    try {
+      const storage = chrome.storage?.sync || chrome.storage?.local;
+      if (!storage) return;
+
+      // 1. Update group list
+      const groupsRes = await storage.get(STORAGE_KEY_GROUPS);
+      const currentGroups: string[] = Array.isArray(groupsRes?.[STORAGE_KEY_GROUPS])
+        ? groupsRes[STORAGE_KEY_GROUPS]
+        : [];
+      if (!currentGroups.includes(group.name)) {
+        currentGroups.push(group.name);
+        currentGroups.sort((a: string, b: string) => a.localeCompare(b, 'uk'));
+        await storage.set({ [STORAGE_KEY_GROUPS]: currentGroups });
+      }
+
+      // 2. Update aliases map
+      const aliasesRes = await storage.get(STORAGE_KEY_ALIASES);
+      const currentAliases: StudentAliasMap = (aliasesRes?.[STORAGE_KEY_ALIASES] as StudentAliasMap) || {};
+
+      let changed = false;
+      for (const s of group.students) {
+        const origName = (s.meetOriginalName || s.fullName).trim();
+        const key = origName.toLowerCase();
+        const studentAlias = s.shortAlias || s.fullName.split(' ')[0] || s.fullName;
+
+        if (!currentAliases[key]) {
+          currentAliases[key] = {
+            key,
+            originalName: origName,
+            alias: studentAlias,
+            group: group.name,
+            updatedAt: Date.now(),
+          };
+          changed = true;
+        } else if (currentAliases[key].group !== group.name) {
+          currentAliases[key].group = group.name;
+          currentAliases[key].updatedAt = Date.now();
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await storage.set({ [STORAGE_KEY_ALIASES]: currentAliases });
+      }
+    } catch (err) {
+      console.warn('[MeetSwitcher:GroupStore] Error syncing to aliases/groups:', err);
     }
   }
 }

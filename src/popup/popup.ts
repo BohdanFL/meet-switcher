@@ -1,5 +1,6 @@
 import type { SessionLog } from '../diagnostics/types.ts';
 import { STORAGE_KEY_GROUPS, type StudentAliasEntry, type StudentAliasMap } from '../types/alias.ts';
+import { STORAGE_KEY_LMS_GROUPS, type StudentGroupMap } from '../types/attendance.ts';
 
 const STORAGE_KEY_SESSIONS = 'meet_switcher_diagnostic_sessions';
 const STORAGE_KEY_ALIASES = 'meet_switcher_student_aliases';
@@ -234,6 +235,60 @@ async function deleteGroup(groupName: string): Promise<void> {
   renderRosterList(searchInput ? searchInput.value : '');
 }
 
+async function loadRosterData(): Promise<void> {
+  aliasesMap = await getAliasesFromStorage();
+  groupsList = await getGroupsFromStorage();
+
+  let newGroupsFound = false;
+  for (const item of Object.values(aliasesMap)) {
+    if (item.group && !groupsList.includes(item.group)) {
+      groupsList.push(item.group);
+      newGroupsFound = true;
+    }
+  }
+
+  // Also merge any groups directly from LMS storage
+  try {
+    const storage = chrome?.storage?.sync || chrome?.storage?.local;
+    if (storage) {
+      const lmsRes = await new Promise<any>((resolve) => {
+        storage.get(STORAGE_KEY_LMS_GROUPS, (res) => resolve(res?.[STORAGE_KEY_LMS_GROUPS] || {}));
+      });
+      const lmsGroups: StudentGroupMap = lmsRes || {};
+      for (const group of Object.values(lmsGroups)) {
+        if (group && group.name) {
+          if (!groupsList.includes(group.name)) {
+            groupsList.push(group.name);
+            newGroupsFound = true;
+          }
+          for (const s of group.students) {
+            const origName = (s.meetOriginalName || s.fullName).trim();
+            const key = normalizeLookupKey(origName);
+            if (!aliasesMap[key]) {
+              aliasesMap[key] = {
+                key,
+                originalName: origName,
+                alias: s.shortAlias || s.fullName.split(' ')[0] || s.fullName,
+                group: group.name,
+                updatedAt: group.updatedAt || Date.now(),
+              };
+            } else if (!aliasesMap[key].group) {
+              aliasesMap[key].group = group.name;
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[MeetSwitcher:Popup] Failed to load LMS groups in popup:', err);
+  }
+
+  if (newGroupsFound) {
+    groupsList.sort((a, b) => a.localeCompare(b, 'uk'));
+    await saveGroupsToStorage(groupsList);
+  }
+}
+
 async function initRoster(): Promise<void> {
   const origInput = document.getElementById('input-orig-name') as HTMLInputElement;
   const studentInput = document.getElementById('input-student-name') as HTMLInputElement;
@@ -250,23 +305,25 @@ async function initRoster(): Promise<void> {
   const importBtn = document.getElementById('btn-import-roster') as HTMLButtonElement;
   const fileInput = document.getElementById('import-file-input') as HTMLInputElement;
 
-  aliasesMap = await getAliasesFromStorage();
-  groupsList = await getGroupsFromStorage();
-
-  let newGroupsFound = false;
-  for (const item of Object.values(aliasesMap)) {
-    if (item.group && !groupsList.includes(item.group)) {
-      groupsList.push(item.group);
-      newGroupsFound = true;
-    }
-  }
-  if (newGroupsFound) {
-    groupsList.sort((a, b) => a.localeCompare(b, 'uk'));
-    await saveGroupsToStorage(groupsList);
-  }
-
+  await loadRosterData();
   populateGroupSelect();
   renderRosterList(searchInput.value);
+
+  // Auto-refresh when storage changes in background
+  try {
+    chrome.storage?.onChanged?.addListener((changes) => {
+      if (
+        changes[STORAGE_KEY_ALIASES] ||
+        changes[STORAGE_KEY_GROUPS] ||
+        changes[STORAGE_KEY_LMS_GROUPS]
+      ) {
+        loadRosterData().then(() => {
+          populateGroupSelect();
+          renderRosterList(searchInput.value);
+        });
+      }
+    });
+  } catch {}
 
   showAddGroupBtn.addEventListener('click', () => {
     groupCreateInline.style.display = 'flex';

@@ -20,4 +20,5 @@ export interface StudentAliasEntry {
 
 export type StudentAliasMap = Record<string, StudentAliasEntry>;
 
+export const STORAGE_KEY_ALIASES = 'meet_switcher_student_aliases';
 export const STORAGE_KEY_GROUPS = 'meet_switcher_student_groups';
