@@ -190,8 +190,9 @@ test('TileBadgeDecorator decorates presentation tile matching user Snippet 1 and
   assert.equal(nameSpan.getAttribute('data-ms-original'), 'Bohdan Rubakha');
   assert.equal(nameSpan.innerHTML.includes('Богдан77'), true);
   assert.equal(nameSpan.innerHTML.includes('Bohdan Rubakha'), true);
-  assert.equal(nameSpan.innerHTML.includes('презентація'), true);
+  assert.equal(nameSpan.innerHTML.includes('Presentation'), true);
   assert.equal(tooltip.textContent.includes('Богдан77'), true);
+  assert.equal(tooltip.textContent.includes('Presentation'), true);
 
   // 2. Simulate Google Meet Wiz framework resetting innerHTML to text while keeping data-ms-formatted
   nameSpan.innerHTML = 'Bohdan Rubakha (Presentation)';
@@ -201,7 +202,7 @@ test('TileBadgeDecorator decorates presentation tile matching user Snippet 1 and
   decorator.updateAll(root as any);
 
   assert.equal(nameSpan.innerHTML.includes('Богдан77'), true, 'Should restore alias after Wiz DOM overwrite');
-  assert.equal(nameSpan.innerHTML.includes('презентація'), true);
+  assert.equal(nameSpan.innerHTML.includes('Presentation'), true);
 });
 
 test('TileBadgeDecorator decorates regular participant webcam/avatar tile matching user Snippet 2', async () => {

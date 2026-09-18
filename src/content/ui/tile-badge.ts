@@ -154,7 +154,7 @@ export class TileBadgeDecorator {
                 isPresentation ? 'true' : 'false',
             );
 
-            const presTagText = isPresentation ? ' (презентація)' : '';
+            const presTagText = isPresentation ? ' (Presentation)' : '';
             const combinedText = `${alias} (${originalName})${presTagText}`;
 
             // Self-healing check: verify BOTH that data-ms-formatted matches AND .ms-alias-name is currently in DOM
@@ -167,7 +167,7 @@ export class TileBadgeDecorator {
             if (!hasAliasSpan || !hasFormattedAttr) {
                 nameEl.setAttribute('data-ms-formatted', combinedText);
                 const presHtml = isPresentation
-                    ? ` <span class="ms-pres-tag" style="opacity: 0.65; font-size: 0.9em; font-weight: normal;">(презентація)</span>`
+                    ? ` <span class="ms-pres-tag" style="opacity: 0.65; font-size: 0.9em; font-weight: normal;">(Presentation)</span>`
                     : '';
                 nameEl.innerHTML = `<span class="ms-alias-name" style="font-weight: 600;">${this.escapeHtml(alias)}</span> <span class="ms-original-name" style="opacity: 0.75; font-weight: normal;">(${this.escapeHtml(originalName)})</span>${presHtml}`;
                 nameEl.title = `MeetSwitcher: Псевдонім "${alias}" для "${originalName}". Натисніть двічі, щоб змінити.`;
