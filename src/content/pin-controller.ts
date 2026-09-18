@@ -80,7 +80,8 @@ export class PinController {
     try {
       await this.unpinActiveStreams();
       this.detector.markAllUnpinned();
-      setTimeout(() => this.detector.scan(), 100);
+      setTimeout(() => this.detector.scan(), 150);
+      setTimeout(() => this.detector.scan(), 550);
       return true;
     } finally {
       this.isSwitching = false;
@@ -106,9 +107,13 @@ export class PinController {
         this.logger.log('ACTION', `Unpinned active stream: "${target.participantName}"`);
         await this.unpinActiveStreams();
         this.detector.markAllUnpinned();
-        setTimeout(() => this.detector.scan(), 50);
+        setTimeout(() => this.detector.scan(), 150);
+        setTimeout(() => this.detector.scan(), 550);
         return true;
       }
+
+      // Clear any unpin suppression since we are intentionally pinning a target
+      this.detector.clearUnpinnedSuppress();
 
       // Check whether target tile is currently in DOM and visible
       let currentTile = target.tileElement;

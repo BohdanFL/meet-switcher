@@ -284,3 +284,59 @@ test('switchToShare falls back to pinViaPeoplePanel when tile is not in DOM', as
     (global as any).document = prevDoc;
   }
 });
+
+test('switchToShare unpins active stream and immediately notifies unpinned state when target is already pinned', async () => {
+  const detector = new ScreenDetector();
+  const controller = new PinController(detector);
+
+  let notifiedShares: any[] = [];
+  detector.onUpdate((shares) => {
+    notifiedShares = shares;
+  });
+
+  const pinnedShare = {
+    id: 'device-pinned:pres',
+    index: 1,
+    participantName: 'Bohdan Rubakha',
+    isPinned: true,
+    isAvailableInDom: true,
+    tileElement: null,
+    videoElement: null,
+  } as any;
+
+  (detector as any).knownShares.set(pinnedShare.id, pinnedShare);
+  (detector as any).currentShares = [pinnedShare];
+
+  let unpinClicked = false;
+  const unpinBtn = new MockElement('button', 'keep_off');
+  unpinBtn.setAttribute('aria-label', 'Unpin Bohdan Rubakha');
+  (unpinBtn as any).dispatchEvent = () => {
+    unpinClicked = true;
+    return true;
+  };
+
+  const prevDoc = (global as any).document;
+  (global as any).document = {
+    querySelector: () => null,
+    querySelectorAll: (sel: string) => {
+      if (sel.includes('button')) return [unpinBtn];
+      return [];
+    },
+    body: {
+      contains: () => false,
+      querySelectorAll: () => [unpinBtn],
+    },
+  };
+
+  try {
+    const res = await controller.switchToShare(pinnedShare);
+    assert.equal(res, true, 'switchToShare must return true for toggle unpin');
+    assert.equal(unpinClicked, true, 'Unpin button must be clicked');
+    assert.equal(notifiedShares.length, 1);
+    assert.equal(notifiedShares[0].isPinned, false, 'Notified share must have isPinned: false immediately');
+    await new Promise((r) => setTimeout(r, 560));
+  } finally {
+    (global as any).document = prevDoc;
+  }
+});
+

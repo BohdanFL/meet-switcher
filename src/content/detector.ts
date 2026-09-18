@@ -93,6 +93,7 @@ export class ScreenDetector {
   private listeners: Set<ScreenSharesListener> = new Set();
   private isScanning = false;
   private hasInitialized = false;
+  private unpinnedUntil = 0;
   private logger = DiagnosticsLogger.getInstance();
 
   /**
@@ -117,19 +118,32 @@ export class ScreenDetector {
    */
   public setExpectedPinnedParticipant(name: string | null): void {
     this.expectedPinnedParticipant = name;
+    if (name) {
+      this.unpinnedUntil = 0;
+    }
   }
 
   /**
-   * Clear pinned state across all known shares (e.g. after global unpin).
+   * Clear pinned state across all known shares (e.g. after global unpin)
+   * and immediately notify UI to remove active highlights.
    */
   public markAllUnpinned(): void {
     this.expectedPinnedParticipant = null;
+    this.unpinnedUntil = Date.now() + 600;
     for (const share of this.knownShares.values()) {
       share.isPinned = false;
     }
     for (const share of this.currentShares) {
       share.isPinned = false;
     }
+    this.notifyListeners();
+  }
+
+  /**
+   * Clear any unpin suppression timeout when a new share is intentionally pinned.
+   */
+  public clearUnpinnedSuppress(): void {
+    this.unpinnedUntil = 0;
   }
 
   /**
@@ -278,6 +292,10 @@ export class ScreenDetector {
    * Resilient to Google Meet control fadeout by checking stage geometry, zoom buttons, and ink canvas.
    */
   public isAnyStreamPinned(): boolean {
+    if (Date.now() < this.unpinnedUntil) {
+      return false;
+    }
+
     // 1. Check known shares
     if (this.currentShares.some((s) => s.isPinned)) return true;
     for (const share of this.knownShares.values()) {
@@ -371,6 +389,9 @@ export class ScreenDetector {
     this.isScanning = true;
 
     try {
+      if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') {
+        return this.currentShares;
+      }
       const videos = Array.from(document.querySelectorAll<HTMLVideoElement>('video'));
       interface RawTile {
         id: string;
@@ -740,6 +761,10 @@ export class ScreenDetector {
    * Check if a presentation tile is currently pinned to the main stage.
    */
   public isTilePinned(tile: HTMLElement): boolean {
+    if (Date.now() < this.unpinnedUntil) {
+      return false;
+    }
+
     // 1. Check for unpin button
     const unpinBtn = this.findUnpinButton(tile);
     if (unpinBtn !== null) {

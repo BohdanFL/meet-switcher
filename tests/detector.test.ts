@@ -326,6 +326,47 @@ test('markAllUnpinned clears expected pinned participant', () => {
   assert.equal(detector.extractParticipantName(stageTile as any), 'Учень / Presentation');
 });
 
+test('markAllUnpinned immediately notifies listeners with all shares unpinned and suppresses isTilePinned', () => {
+  const detector = new ScreenDetector();
+
+  let listenerFiredCount = 0;
+  let lastSharesReceived: any[] = [];
+  detector.onUpdate((shares) => {
+    listenerFiredCount++;
+    lastSharesReceived = shares;
+  });
+
+  // Manually insert a share with isPinned = true
+  (detector as any).knownShares.set('pres-test', {
+    id: 'pres-test',
+    participantName: 'Test Student',
+    index: 1,
+    isPinned: true,
+    isAvailableInDom: true,
+  });
+  (detector as any).currentShares = Array.from((detector as any).knownShares.values());
+
+  // Call markAllUnpinned
+  detector.markAllUnpinned();
+
+  assert.equal(listenerFiredCount >= 2, true, 'Listener must be called immediately by markAllUnpinned');
+  assert.equal(lastSharesReceived.length, 1);
+  assert.equal(lastSharesReceived[0].isPinned, false, 'Share must be marked unpinned');
+
+  // Verify suppression of isTilePinned and isAnyStreamPinned
+  const tileWithUnpin = new MockElement('div', '');
+  const unpinBtn = new MockElement('button', 'keep_off');
+  unpinBtn.setAttribute('aria-label', 'Unpin Test Student');
+  tileWithUnpin.appendChild(unpinBtn);
+
+  assert.equal(detector.isTilePinned(tileWithUnpin as any), false, 'isTilePinned must return false during suppression');
+  assert.equal(detector.isAnyStreamPinned(), false, 'isAnyStreamPinned must return false during suppression');
+
+  // Verify clearUnpinnedSuppress restores normal detection
+  detector.clearUnpinnedSuppress();
+  assert.equal(detector.isTilePinned(tileWithUnpin as any), true, 'isTilePinned should detect pinned tile after suppression cleared');
+});
+
 test('Rejects annotation notice strings as participant names', () => {
   const detector = new ScreenDetector();
   assert.equal(detector.isValidParticipantName('Everyone can see your annotations'), false);
