@@ -696,6 +696,11 @@ input:checked + .slider:before {
   color: #f28b82;
 }
 
+.roster-icon-btn.remove-group:hover {
+  background-color: rgba(253, 214, 99, 0.2);
+  color: #fdd663;
+}
+
 .roster-toolbar {
   display: flex;
   gap: 8px;

@@ -189,6 +189,23 @@ export class GroupStore {
     this.notifyListeners();
   }
 
+  public async removeStudent(groupId: string, studentId: string): Promise<void> {
+    if (!this.isLoaded) {
+      await this.init();
+    }
+
+    const group = this.groups[groupId];
+    if (!group) return;
+
+    const prevLen = group.students.length;
+    group.students = group.students.filter((s) => s.id !== studentId);
+    if (group.students.length !== prevLen) {
+      group.updatedAt = Date.now();
+      await this.persist();
+      this.notifyListeners();
+    }
+  }
+
   public onUpdate(listener: (groups: StudentGroupMap) => void): () => void {
     this.listeners.push(listener);
     return () => {

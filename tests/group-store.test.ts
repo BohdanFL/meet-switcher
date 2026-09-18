@@ -181,3 +181,51 @@ test('GroupStore syncs imported groups and student aliases to meet_switcher_stud
     delete (globalThis as any).chrome;
   }
 });
+
+test('GroupStore removeStudent removes student from group and updates storage', async () => {
+  const fakeStorage: Record<string, any> = {};
+  (globalThis as any).chrome = {
+    storage: {
+      sync: {
+        get: async (key: string) => ({ [key]: fakeStorage[key] }),
+        set: async (obj: Record<string, any>) => Object.assign(fakeStorage, obj),
+      },
+    },
+  };
+
+  try {
+    const store = new GroupStore({ enableStorageSync: true });
+    await store.saveGroup({
+      id: '2595601',
+      name: 'УКР_Гейм_ЧТ_19:00',
+      lmsUrl: 'https://lms.alg.academy/group/view/2595601',
+      updatedAt: 1000,
+      students: [
+        {
+          id: '1',
+          fullName: 'Студент 1',
+        },
+        {
+          id: '2',
+          fullName: 'Студент 2',
+        },
+      ],
+    });
+
+    let grp = await store.getGroup('2595601');
+    assert.equal(grp?.students.length, 2);
+
+    await store.removeStudent('2595601', '1');
+    grp = await store.getGroup('2595601');
+    assert.equal(grp?.students.length, 1);
+    assert.equal(grp?.students[0].id, '2');
+
+    // Verify persisted to storage
+    const stored = fakeStorage['meet_switcher_lms_groups']['2595601'];
+    assert.equal(stored.students.length, 1);
+    assert.equal(stored.students[0].id, '2');
+  } finally {
+    delete (globalThis as any).chrome;
+  }
+});
+

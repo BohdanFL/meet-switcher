@@ -129,6 +129,44 @@ async function saveGroupsToStorage(groups: string[]): Promise<void> {
   });
 }
 
+async function getLmsGroupsFromStorage(): Promise<StudentGroupMap> {
+  return new Promise((resolve) => {
+    const storage = chrome?.storage?.sync || chrome?.storage?.local;
+    if (!storage) {
+      resolve({});
+      return;
+    }
+
+    storage.get(STORAGE_KEY_LMS_GROUPS, (res) => {
+      if (chrome.runtime?.lastError) {
+        chrome.storage?.local?.get(STORAGE_KEY_LMS_GROUPS, (localRes) => {
+          resolve((localRes?.[STORAGE_KEY_LMS_GROUPS] as StudentGroupMap) || {});
+        });
+        return;
+      }
+      resolve((res?.[STORAGE_KEY_LMS_GROUPS] as StudentGroupMap) || {});
+    });
+  });
+}
+
+async function saveLmsGroupsToStorage(data: StudentGroupMap): Promise<void> {
+  return new Promise((resolve) => {
+    const storage = chrome?.storage?.sync || chrome?.storage?.local;
+    if (!storage) {
+      resolve();
+      return;
+    }
+
+    storage.set({ [STORAGE_KEY_LMS_GROUPS]: data }, () => {
+      if (chrome.runtime?.lastError) {
+        chrome.storage?.local?.set({ [STORAGE_KEY_LMS_GROUPS]: data }, () => resolve());
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
 function populateGroupSelect(selectedGroup?: string): void {
   const selectEl = document.getElementById('select-group') as HTMLSelectElement;
   if (!selectEl) return;
@@ -199,6 +237,24 @@ async function renameGroup(oldName: string, newName: string): Promise<void> {
     await saveAliasesToStorage(aliasesMap);
   }
 
+  // Also rename in STORAGE_KEY_LMS_GROUPS
+  try {
+    const lmsGroups = await getLmsGroupsFromStorage();
+    let lmsChanged = false;
+    for (const grp of Object.values(lmsGroups)) {
+      if (grp.name === oldName) {
+        grp.name = trimmed;
+        grp.updatedAt = Date.now();
+        lmsChanged = true;
+      }
+    }
+    if (lmsChanged) {
+      await saveLmsGroupsToStorage(lmsGroups);
+    }
+  } catch (err) {
+    console.warn('[MeetSwitcher:Popup] Failed to rename group in LMS storage:', err);
+  }
+
   populateGroupSelect();
   const searchInput = document.getElementById('input-search-roster') as HTMLInputElement;
   renderRosterList(searchInput ? searchInput.value : '');
@@ -230,6 +286,23 @@ async function deleteGroup(groupName: string): Promise<void> {
     await saveAliasesToStorage(aliasesMap);
   }
 
+  // Also delete from STORAGE_KEY_LMS_GROUPS
+  try {
+    const lmsGroups = await getLmsGroupsFromStorage();
+    let lmsChanged = false;
+    for (const [id, grp] of Object.entries(lmsGroups)) {
+      if (grp.name === groupName) {
+        delete lmsGroups[id];
+        lmsChanged = true;
+      }
+    }
+    if (lmsChanged) {
+      await saveLmsGroupsToStorage(lmsGroups);
+    }
+  } catch (err) {
+    console.warn('[MeetSwitcher:Popup] Failed to delete group from LMS storage:', err);
+  }
+
   populateGroupSelect();
   const searchInput = document.getElementById('input-search-roster') as HTMLInputElement;
   renderRosterList(searchInput ? searchInput.value : '');
@@ -247,36 +320,13 @@ async function loadRosterData(): Promise<void> {
     }
   }
 
-  // Also merge any groups directly from LMS storage
+  // Ensure any groups in LMS storage are registered in groupsList
   try {
-    const storage = chrome?.storage?.sync || chrome?.storage?.local;
-    if (storage) {
-      const lmsRes = await new Promise<any>((resolve) => {
-        storage.get(STORAGE_KEY_LMS_GROUPS, (res) => resolve(res?.[STORAGE_KEY_LMS_GROUPS] || {}));
-      });
-      const lmsGroups: StudentGroupMap = lmsRes || {};
-      for (const group of Object.values(lmsGroups)) {
-        if (group && group.name) {
-          if (!groupsList.includes(group.name)) {
-            groupsList.push(group.name);
-            newGroupsFound = true;
-          }
-          for (const s of group.students) {
-            const origName = (s.meetOriginalName || s.fullName).trim();
-            const key = normalizeLookupKey(origName);
-            if (!aliasesMap[key]) {
-              aliasesMap[key] = {
-                key,
-                originalName: origName,
-                alias: s.shortAlias || s.fullName.split(' ')[0] || s.fullName,
-                group: group.name,
-                updatedAt: group.updatedAt || Date.now(),
-              };
-            } else if (!aliasesMap[key].group) {
-              aliasesMap[key].group = group.name;
-            }
-          }
-        }
+    const lmsGroups = await getLmsGroupsFromStorage();
+    for (const group of Object.values(lmsGroups)) {
+      if (group && group.name && !groupsList.includes(group.name)) {
+        groupsList.push(group.name);
+        newGroupsFound = true;
       }
     }
   } catch (err) {
@@ -379,6 +429,41 @@ async function initRoster(): Promise<void> {
     };
 
     await saveAliasesToStorage(aliasesMap);
+
+    // Sync student update to LMS storage
+    try {
+      const lmsGroups = await getLmsGroupsFromStorage();
+      let lmsChanged = false;
+      for (const grp of Object.values(lmsGroups)) {
+        const idx = grp.students.findIndex((s) => {
+          const sKey = normalizeLookupKey(s.meetOriginalName || s.fullName);
+          const sFull = s.fullName.trim().toLowerCase();
+          const origFull = orig.toLowerCase();
+          return sKey === key || sFull === origFull;
+        });
+
+        if (idx !== -1) {
+          if (grp.name === selectedGroup) {
+            // Updated student within this group
+            grp.students[idx].meetOriginalName = orig;
+            grp.students[idx].shortAlias = alias;
+            grp.updatedAt = Date.now();
+            lmsChanged = true;
+          } else {
+            // Student unassigned from this group or moved to another group
+            grp.students.splice(idx, 1);
+            grp.updatedAt = Date.now();
+            lmsChanged = true;
+          }
+        }
+      }
+      if (lmsChanged) {
+        await saveLmsGroupsToStorage(lmsGroups);
+      }
+    } catch (err) {
+      console.warn('[MeetSwitcher:Popup] Failed to update LMS storage for student:', err);
+    }
+
     origInput.value = '';
     studentInput.value = '';
     groupSelect.value = '';
@@ -628,11 +713,13 @@ function renderRosterList(filter = ''): void {
           </div>
           <div class="roster-item-actions">
             <button class="roster-icon-btn edit" title="Редагувати">✏️</button>
-            <button class="roster-icon-btn delete" title="Видалити псевдонім">🗑️</button>
+            ${!isUnassigned ? `<button class="roster-icon-btn remove-group" title="Вилучити учня з цієї групи">⊘</button>` : ''}
+            <button class="roster-icon-btn delete" title="Видалити учня">🗑️</button>
           </div>
         `;
 
         const editBtn = li.querySelector<HTMLButtonElement>('.edit')!;
+        const removeGroupBtn = li.querySelector<HTMLButtonElement>('.remove-group');
         const deleteBtn = li.querySelector<HTMLButtonElement>('.delete')!;
 
         editBtn.addEventListener('click', () => {
@@ -643,10 +730,75 @@ function renderRosterList(filter = ''): void {
           origInput.focus();
         });
 
+        if (removeGroupBtn) {
+          removeGroupBtn.addEventListener('click', async () => {
+            if (
+              confirm(
+                `Вилучити учня "${item.alias}" з групи "${grpName}"?\n(Учень залишиться в списку в категорії "(Без групи)")`
+              )
+            ) {
+              delete aliasesMap[item.key].group;
+              aliasesMap[item.key].updatedAt = Date.now();
+              await saveAliasesToStorage(aliasesMap);
+
+              try {
+                const lmsGroups = await getLmsGroupsFromStorage();
+                let lmsChanged = false;
+                for (const grp of Object.values(lmsGroups)) {
+                  if (grp.name === grpName) {
+                    const prevLen = grp.students.length;
+                    grp.students = grp.students.filter((s) => {
+                      const sKey = normalizeLookupKey(s.meetOriginalName || s.fullName);
+                      const sFull = s.fullName.trim().toLowerCase();
+                      const origFull = item.originalName.trim().toLowerCase();
+                      return sKey !== item.key && sFull !== origFull;
+                    });
+                    if (grp.students.length !== prevLen) {
+                      grp.updatedAt = Date.now();
+                      lmsChanged = true;
+                    }
+                  }
+                }
+                if (lmsChanged) {
+                  await saveLmsGroupsToStorage(lmsGroups);
+                }
+              } catch (err) {
+                console.warn('[MeetSwitcher:Popup] Failed to remove student from LMS group:', err);
+              }
+
+              renderRosterList(filter);
+            }
+          });
+        }
+
         deleteBtn.addEventListener('click', async () => {
-          if (confirm(`Видалити псевдонім "${item.alias}" для акаунта "${item.originalName}"?`)) {
+          if (confirm(`Видалити учня "${item.alias}" (${item.originalName})?`)) {
             delete aliasesMap[item.key];
             await saveAliasesToStorage(aliasesMap);
+
+            try {
+              const lmsGroups = await getLmsGroupsFromStorage();
+              let lmsChanged = false;
+              for (const grp of Object.values(lmsGroups)) {
+                const prevLen = grp.students.length;
+                grp.students = grp.students.filter((s) => {
+                  const sKey = normalizeLookupKey(s.meetOriginalName || s.fullName);
+                  const sFull = s.fullName.trim().toLowerCase();
+                  const origFull = item.originalName.trim().toLowerCase();
+                  return sKey !== item.key && sFull !== origFull;
+                });
+                if (grp.students.length !== prevLen) {
+                  grp.updatedAt = Date.now();
+                  lmsChanged = true;
+                }
+              }
+              if (lmsChanged) {
+                await saveLmsGroupsToStorage(lmsGroups);
+              }
+            } catch (err) {
+              console.warn('[MeetSwitcher:Popup] Failed to delete student from LMS storage:', err);
+            }
+
             renderRosterList(filter);
           }
         });
