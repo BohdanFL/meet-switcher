@@ -26,6 +26,9 @@ export class TileBadgeDecorator {
         if (existingBadge.textContent !== badgeText) {
           existingBadge.textContent = badgeText;
         }
+        if (typeof document !== 'undefined' && share.tileElement.appendChild && !share.tileElement.contains(existingBadge)) {
+          share.tileElement.appendChild(existingBadge);
+        }
       } else {
         const badge = typeof document !== 'undefined' && typeof document.createElement === 'function'
           ? document.createElement('div')
@@ -41,7 +44,7 @@ export class TileBadgeDecorator {
           position: 'absolute',
           top: '12px',
           left: '12px',
-          zIndex: '15',
+          zIndex: '9999',
           background: 'rgba(15, 17, 23, 0.88)',
           backdropFilter: 'blur(6px)',
           WebkitBackdropFilter: 'blur(6px)',

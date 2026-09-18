@@ -7,6 +7,7 @@ import { MockGenerator } from './mock-generator';
 import { AnimationKiller } from './animation-killer';
 import { AliasManager } from './alias-manager';
 import { TileBadgeDecorator } from './ui/tile-badge';
+import { SidePanelDecorator } from './ui/side-panel-decorator';
 import { DiagnosticsLogger } from '../diagnostics/logger.ts';
 import { CallMonitor } from '../diagnostics/call-monitor.ts';
 
@@ -84,6 +85,9 @@ function initMeetSwitcher(): void {
   const aliasManager = AliasManager.getInstance();
   aliasManager.init();
   const tileDecorator = new TileBadgeDecorator(aliasManager);
+  const sidePanelDecorator = new SidePanelDecorator(aliasManager);
+  sidePanelDecorator.start();
+
   const hud = new SwitcherHud(controller);
   const wall = new ClassroomWall(hud.getShadowRoot(), (share) => {
     controller.switchToShare(share);
@@ -147,9 +151,16 @@ function initMeetSwitcher(): void {
     tileDecorator.updateBadges(shares);
   });
 
+  // Keep badges and side panel alive across every DOM mutation / scan
+  detector.onScan((shares) => {
+    tileDecorator.updateBadges(shares);
+    sidePanelDecorator.update();
+  });
+
   // Re-render video tile badges whenever aliases are added, edited, or removed
   aliasManager.onUpdate(() => {
     tileDecorator.updateBadges(detector.getScreenShares());
+    sidePanelDecorator.update();
   });
 
   // Load and apply Demo visibility setting

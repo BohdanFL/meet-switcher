@@ -7,7 +7,7 @@
     "build": "node scripts/build.js",
     "dev": "node scripts/build.js --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types tests/detector.test.ts tests/logger.test.ts tests/call-monitor.test.ts tests/alias-manager.test.ts tests/tile-badge.test.ts tests/pin-controller.test.ts tests/wall.test.ts"
+    "test": "node --test --experimental-strip-types tests/detector.test.ts tests/logger.test.ts tests/call-monitor.test.ts tests/alias-manager.test.ts tests/tile-badge.test.ts tests/side-panel-decorator.test.ts tests/pin-controller.test.ts tests/wall.test.ts"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.308",

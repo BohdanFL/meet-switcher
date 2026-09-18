@@ -91,6 +91,7 @@ export class ScreenDetector {
   private knownPresentationVideos: Set<HTMLVideoElement> = new Set();
   private expectedPinnedParticipant: string | null = null;
   private listeners: Set<ScreenSharesListener> = new Set();
+  private scanListeners: Set<ScreenSharesListener> = new Set();
   private isScanning = false;
   private hasInitialized = false;
   private unpinnedUntil = 0;
@@ -104,6 +105,15 @@ export class ScreenDetector {
     // Emit current state immediately
     listener(this.currentShares);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to every DOM scan event (even if the shares list did not change).
+   * Useful for decorators that need to maintain injected DOM elements across Meet re-renders.
+   */
+  public onScan(listener: ScreenSharesListener): () => void {
+    this.scanListeners.add(listener);
+    return () => this.scanListeners.delete(listener);
   }
 
   /**
@@ -379,6 +389,7 @@ export class ScreenDetector {
       this.debounceTimer = null;
     }
     this.listeners.clear();
+    this.scanListeners.clear();
   }
 
   /**
@@ -600,6 +611,15 @@ export class ScreenDetector {
         });
         this.notifyListeners();
       }
+
+      for (const listener of this.scanListeners) {
+        try {
+          listener(detected);
+        } catch (err) {
+          console.error('[MeetSwitcher] Error in detector scanListener:', err);
+        }
+      }
+
       return detected;
     } catch (err) {
       this.logger.log('ERROR', 'Unexpected error during DOM scan', { error: String(err) });
