@@ -35,13 +35,27 @@ export const SYSTEM_NAME_PATTERNS: RegExp[] = [
   /спробуйте анотувати/i,
   /видимо для всіх/i,
   /видимо всем/i,
-  /zoom in/i,
-  /zoom out/i,
+  /zoom/i,
+  /масштаб/i,
+  /current zoom level/i,
+  /рівень масштабу/i,
+  /уровень масштаба/i,
+  /stop presenting/i,
+  /stop sharing/i,
+  /зупинити показ/i,
+  /припинити показ/i,
+  /зупинити презентацію/i,
+  /припинити презентацію/i,
+  /зупинити трансляцію/i,
+  /остановить показ/i,
+  /остановить презентацию/i,
   /enter full screen/i,
   /exit full screen/i,
   /full screen/i,
   /повний екран/i,
   /на весь екран/i,
+  /fit to screen/i,
+  /вписати/i,
   /open_in_full/i,
   /ink-canvas/i,
   /ink-layer/i,
@@ -63,6 +77,8 @@ export const SYSTEM_NAME_PATTERNS: RegExp[] = [
   /mic_none/i,
   /volume_off/i,
   /volume_up/i,
+  /\d+%/,
+  /^\d+$/,
 ];
 
 export class ScreenDetector {
@@ -131,14 +147,28 @@ export class ScreenDetector {
    * Validate that a candidate string is a real participant name and not a system UI phrase.
    */
   public isValidParticipantName(name: string): boolean {
-    if (!name || name.length <= 1 || name.length > 50) return false;
-    if (name.includes('{') || name.includes('}') || name.includes(';')) return false;
+    if (!name || typeof name !== 'string') return false;
+    const trimmed = name.trim();
+    if (trimmed.length <= 1 || trimmed.length > 50) return false;
+    if (trimmed.includes('{') || trimmed.includes('}') || trimmed.includes(';')) return false;
+
+    // Reject zoom percentages, numeric-only strings, or strings with %
+    if (trimmed.includes('%') || /\d+%/.test(trimmed)) return false;
+
+    // Reject pure numbers
+    if (/^\d+$/.test(trimmed)) return false;
+
+    // Reject strings starting with digit followed by % or zoom
+    if (/^\d+.*(?:%|zoom|масштаб)/i.test(trimmed)) return false;
+
+    // Reject names containing zoom or scale keywords
+    if (/zoom|масштаб/i.test(trimmed)) return false;
 
     for (const pattern of SYSTEM_NAME_PATTERNS) {
-      if (pattern.test(name)) return false;
+      if (pattern.test(trimmed)) return false;
     }
 
-    const lower = name.toLowerCase();
+    const lower = trimmed.toLowerCase();
     if (
       lower === 'презентація' ||
       lower === 'presentation' ||
@@ -150,6 +180,97 @@ export class ScreenDetector {
     }
 
     return true;
+  }
+
+  /**
+   * Check if a video element's media stream has been ended or inactivated.
+   */
+  public isMediaStreamEnded(video: HTMLVideoElement | null | undefined): boolean {
+    if (!video) return false;
+    try {
+      if (video.ended) return true;
+      const stream = (video as any).srcObject as MediaStream | null;
+      if (stream) {
+        if ('active' in stream && stream.active === false) {
+          return true;
+        }
+        if (typeof stream.getVideoTracks === 'function') {
+          const tracks = stream.getVideoTracks();
+          if (tracks.length > 0 && tracks.every((t) => t.readyState === 'ended')) {
+            return true;
+          }
+        }
+      }
+    } catch {
+      // Ignore cross-origin or sandbox errors
+    }
+    return false;
+  }
+
+  /**
+   * Determine whether a tile is the teacher's own presentation.
+   * Checks for "Stop presenting" buttons, "Your presentation" badges, etc.
+   */
+  public isTeacherPresentationTile(tile: HTMLElement): boolean {
+    if (!tile) return false;
+
+    // 1. Check tile aria-label
+    const tileAria = (tile.getAttribute('aria-label') || '').toLowerCase();
+    if (
+      tileAria.includes('your presentation') ||
+      tileAria.includes('ваша презентація') ||
+      tileAria.includes('вашу презентацію') ||
+      tileAria.includes('ваша презентация') ||
+      tileAria.includes('ви транслюєте') ||
+      tileAria.includes('you are presenting') ||
+      tileAria.includes('вы транслируете')
+    ) {
+      return true;
+    }
+
+    // 2. Check for "Stop presenting" or "Your presentation" buttons inside tile
+    const buttons = Array.from(tile.querySelectorAll<HTMLButtonElement>('button'));
+    const stopRegex = /(?:зупинити показ|припинити показ|зупинити презентацію|припинити презентацію|зупинити трансляцію|stop presenting|stop sharing|остановить показ|остановить презентацию)/i;
+    for (const btn of buttons) {
+      const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+      const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
+      const text = (btn.textContent || '').toLowerCase();
+
+      if (stopRegex.test(label) || stopRegex.test(tooltip) || stopRegex.test(text)) {
+        return true;
+      }
+
+      if (
+        label.includes('your presentation') ||
+        label.includes('ваша презентація') ||
+        label.includes('вашу презентацію') ||
+        tooltip.includes('your presentation') ||
+        tooltip.includes('ваша презентація')
+      ) {
+        return true;
+      }
+    }
+
+    // 3. Check for badges or text indicating own presentation
+    const textEls = Array.from(tile.querySelectorAll<HTMLElement>('span, div, p'));
+    for (const el of textEls) {
+      const txt = (el.textContent || '').trim().toLowerCase();
+      if (
+        txt.includes('ваша презентація') ||
+        txt.includes('your presentation') ||
+        txt.includes('ваша презентация') ||
+        txt.includes('ви транслюєте екран') ||
+        txt.includes('you are presenting') ||
+        txt.includes('ви показуєте екран') ||
+        txt.includes('зупинити показ') ||
+        txt.includes('припинити показ') ||
+        txt.includes('stop presenting')
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -267,6 +388,11 @@ export class ScreenDetector {
         const tile = this.findTileContainer(video);
         if (!tile) continue;
 
+        // Skip ended streams or teacher's own presentation
+        if (this.isMediaStreamEnded(video) || this.isTeacherPresentationTile(tile)) {
+          continue;
+        }
+
         if (this.isPresentationTile(tile)) {
           const participantId =
             tile.getAttribute('data-participant-id') ||
@@ -313,8 +439,17 @@ export class ScreenDetector {
         );
         if (existingIdx >= 0) {
           const existing = consolidatedRawList[existingIdx];
+          const rawIsRealDevice = raw.id.includes(':pres') && !raw.id.startsWith('pres-');
+          const existingIsRealDevice = existing.id.includes(':pres') && !existing.id.startsWith('pres-');
+
+          // If both have different real device IDs, they are two separate accounts/devices (e.g. ЛЕОН and Леон)
+          if (rawIsRealDevice && existingIsRealDevice && raw.id !== existing.id) {
+            consolidatedRawList.push(raw);
+            continue;
+          }
+
           // Prefer tile with real device ID or explicit pin button
-          if (raw.id.includes(':pres') && !raw.id.startsWith('pres-')) {
+          if (rawIsRealDevice) {
             consolidatedRawList[existingIdx] = {
               ...raw,
               isPinned: existing.isPinned || raw.isPinned,
@@ -360,11 +495,12 @@ export class ScreenDetector {
         let slot = this.participantSlots.get(raw.id);
         let existingShare = this.knownShares.get(raw.id);
 
-        // Reconnect / slot migration: if this participant had a previous inactive slot under another ID
+        // Reconnect / slot migration: if this participant had a previous slot whose tile is no longer in DOM
         if (!existingShare && !isGenericName) {
           for (const [oldId, known] of Array.from(this.knownShares.entries())) {
+            const isOldStillInDom = consolidatedRawList.some((r) => r.id === oldId);
             if (
-              !known.isAvailableInDom &&
+              !isOldStillInDom &&
               this.normalizeParticipantName(known.participantName) === normName
             ) {
               slot = this.participantSlots.get(oldId);
@@ -405,13 +541,18 @@ export class ScreenDetector {
           share.isPinned = false;
           share.isAvailableInDom = false;
 
-          // Prune ONLY if missing for > 90,000ms (90 seconds grace period)
+          const streamEnded = this.isMediaStreamEnded(share.videoElement);
+          // If media stream is explicitly ended, prune immediately (0ms).
+          // In grid mode (!isAnyPinned), prune after 3.5s (reflow guard).
+          // When a stream is pinned (isAnyPinned), keep up to 15s to tolerate Meet DOM virtualization.
+          const maxGracePeriod = streamEnded ? 0 : (isAnyPinned ? 15000 : 3500);
+
           const lastSeen = this.lastSeenMap.get(id) || 0;
-          if (now - lastSeen > 90000) {
+          if (now - lastSeen >= maxGracePeriod) {
             this.knownShares.delete(id);
             this.lastSeenMap.delete(id);
             this.participantSlots.delete(id);
-            this.logger.log('SCAN', `Removed inactive participant screen (90s timeout): ${share.participantName}`);
+            this.logger.log('SCAN', `Removed inactive participant screen (${maxGracePeriod}ms timeout): ${share.participantName}`);
           }
         }
       }
@@ -643,6 +784,27 @@ export class ScreenDetector {
    * Extract human-readable participant name from the presentation tile.
    */
   public extractParticipantName(tile: HTMLElement): string {
+    // 0. Own presentation check
+    if (this.isTeacherPresentationTile(tile)) {
+      return 'Ваш екран (Ви)';
+    }
+
+    // 0.1 Check if this tile's participant ID matches an already known non-generic participant share
+    const participantId =
+      tile.getAttribute('data-participant-id') ||
+      tile.getAttribute('data-requested-participant-id') ||
+      tile.getAttribute('data-tile-media-id');
+    if (participantId) {
+      const known = this.knownShares.get(`${participantId}:pres`);
+      if (
+        known &&
+        this.isValidParticipantName(known.participantName) &&
+        !this.isGenericFallbackName(known.participantName)
+      ) {
+        return known.participantName;
+      }
+    }
+
     const buttons = Array.from(tile.querySelectorAll<HTMLButtonElement>('button'));
 
     // Heuristic 1: Pin / Unpin button aria-label
@@ -720,9 +882,22 @@ export class ScreenDetector {
       }
     }
 
+    // Heuristic 4.5: Prefer Google Meet's standard name badge element (.notranslate)
+    const notranslate = tile.querySelector('.notranslate');
+    if (notranslate && notranslate.textContent) {
+      const cleaned = this.cleanParticipantName(notranslate.textContent.trim());
+      if (this.isValidParticipantName(cleaned)) {
+        return cleaned;
+      }
+    }
+
     // Heuristic 5: Inspect text elements within the tile (with strict blacklist)
     const textElements = Array.from(tile.querySelectorAll<HTMLElement>('span, div'));
     for (const el of textElements) {
+      // Ignore controls and buttons (e.g. zoom controls, full screen controls)
+      if (el.closest && el.closest('button, [role="button"], [aria-label*="zoom" i]')) {
+        continue;
+      }
       const text = el.textContent?.trim();
       if (
         text &&
@@ -753,9 +928,15 @@ export class ScreenDetector {
     return (
       lower.includes('ваш екран') ||
       lower.includes('ваша презентація') ||
+      lower.includes('вашу презентацію') ||
+      lower.includes('ваша презентация') ||
       lower.includes('your presentation') ||
       lower.includes('ви транслюєте') ||
-      lower.includes('you are presenting')
+      lower.includes('you are presenting') ||
+      lower.includes('вы транслируете') ||
+      lower.includes('ви показуєте') ||
+      lower.includes('stop presenting') ||
+      lower.includes('зупинити показ')
     );
   }
 

@@ -69,6 +69,9 @@ class MockElement {
       if (selector.includes('data-participant-id') && curr.getAttribute('data-participant-id')) {
         return curr;
       }
+      if (selector.includes('button') && curr.tagName === 'BUTTON') {
+        return curr;
+      }
       curr = curr.parentElement;
     }
     return null;
@@ -397,6 +400,198 @@ test('Replaces inactive participant slot when new stream arrives for same partic
   assert.equal(shares2[0].index, 1);
   assert.equal(shares2[0].isAvailableInDom, true);
   assert.equal(shares2[0].id, 'device-363:pres');
+
+  delete (globalThis as any).document;
+});
+
+test('isValidParticipantName strictly rejects zoom overlays, percentages, and pure numbers', () => {
+  const detector = new ScreenDetector();
+
+  assert.equal(detector.isValidParticipantName('100%Current zoom level'), false);
+  assert.equal(detector.isValidParticipantName('100% Current zoom level'), false);
+  assert.equal(detector.isValidParticipantName('100%'), false);
+  assert.equal(detector.isValidParticipantName('75%'), false);
+  assert.equal(detector.isValidParticipantName('125% zoom'), false);
+  assert.equal(detector.isValidParticipantName('Current zoom level'), false);
+  assert.equal(detector.isValidParticipantName('Zoom level'), false);
+  assert.equal(detector.isValidParticipantName('Рівень масштабу'), false);
+  assert.equal(detector.isValidParticipantName('Уровень масштаба'), false);
+  assert.equal(detector.isValidParticipantName('100% масштаб'), false);
+  assert.equal(detector.isValidParticipantName('123'), false);
+  assert.equal(detector.isValidParticipantName('Stop presenting'), false);
+  assert.equal(detector.isValidParticipantName('Зупинити показ'), false);
+});
+
+test('isTeacherPresentationTile correctly detects teacher own presentation indicators', () => {
+  const detector = new ScreenDetector();
+
+  // 1. Teacher tile with "Зупинити показ" button
+  const teacherTile1 = new MockElement('div');
+  const stopBtn = new MockElement('button', 'Зупинити показ');
+  stopBtn.setAttribute('aria-label', 'Зупинити показ');
+  teacherTile1.appendChild(stopBtn);
+  assert.equal(detector.isTeacherPresentationTile(teacherTile1 as any), true);
+
+  // 2. Teacher tile with "Stop presenting" button
+  const teacherTile2 = new MockElement('div');
+  const stopBtnEn = new MockElement('button', 'Stop presenting');
+  stopBtnEn.setAttribute('aria-label', 'Stop presenting');
+  teacherTile2.appendChild(stopBtnEn);
+  assert.equal(detector.isTeacherPresentationTile(teacherTile2 as any), true);
+
+  // 3. Teacher tile with "Ваша презентація" badge
+  const teacherTile3 = new MockElement('div');
+  const badge = new MockElement('span', 'Ваша презентація');
+  teacherTile3.appendChild(badge);
+  assert.equal(detector.isTeacherPresentationTile(teacherTile3 as any), true);
+
+  // 4. Normal student tile (must return false)
+  const studentTile = new MockElement('div');
+  const studentBtn = new MockElement('button');
+  studentBtn.setAttribute('aria-label', 'Закріпити презентацію користувача Богдан');
+  studentTile.appendChild(studentBtn);
+  assert.equal(detector.isTeacherPresentationTile(studentTile as any), false);
+});
+
+test('isMediaStreamEnded detects ended WebRTC streams', () => {
+  const detector = new ScreenDetector();
+
+  // 1. Video with ended = true
+  const videoEnded = { ended: true } as any;
+  assert.equal(detector.isMediaStreamEnded(videoEnded), true);
+
+  // 2. Video with stream active = false
+  const videoInactiveStream = {
+    ended: false,
+    srcObject: { active: false },
+  } as any;
+  assert.equal(detector.isMediaStreamEnded(videoInactiveStream), true);
+
+  // 3. Video with stream tracks all ended
+  const videoEndedTracks = {
+    ended: false,
+    srcObject: {
+      active: true,
+      getVideoTracks: () => [{ readyState: 'ended' }, { readyState: 'ended' }],
+    },
+  } as any;
+  assert.equal(detector.isMediaStreamEnded(videoEndedTracks), true);
+
+  // 4. Video with active stream and live tracks
+  const videoLive = {
+    ended: false,
+    srcObject: {
+      active: true,
+      getVideoTracks: () => [{ readyState: 'live' }],
+    },
+  } as any;
+  assert.equal(detector.isMediaStreamEnded(videoLive), false);
+});
+
+test('extractParticipantName resolves known participant name from data-participant-id', () => {
+  const detector = new ScreenDetector();
+
+  // First scan: register device-500 with full student name
+  const tile1 = new MockElement('div');
+  tile1.setAttribute('data-participant-id', 'device-500');
+  const video1 = new MockElement('video');
+  const btn1 = new MockElement('button');
+  btn1.setAttribute('aria-label', 'Закріпити презентацію користувача Богдан Рубаха');
+  tile1.appendChild(btn1);
+  tile1.appendChild(video1);
+
+  (globalThis as any).document = {
+    querySelectorAll: (sel: string) => (sel.includes('video') ? [video1] : []),
+    querySelector: () => null,
+  };
+
+  detector.scan();
+  const shares1 = detector.getScreenShares();
+  assert.equal(shares1.length, 1);
+  assert.equal(shares1[0].participantName, 'Богдан Рубаха');
+
+  // Now stage tile with device-500 only has generic text elements inside
+  const stageTile = new MockElement('div');
+  stageTile.setAttribute('data-participant-id', 'device-500');
+  const genericText = new MockElement('span', 'presentation');
+  stageTile.appendChild(genericText);
+
+  // extractParticipantName must reuse known name from device-500
+  const extracted = detector.extractParticipantName(stageTile as any);
+  assert.equal(extracted, 'Богдан Рубаха');
+
+  delete (globalThis as any).document;
+});
+
+test('Inactive presentation is pruned after grace period and ended stream is pruned immediately', () => {
+  const detector = new ScreenDetector();
+
+  const tile1 = new MockElement('div');
+  tile1.setAttribute('data-participant-id', 'dev-1');
+  const video1 = new MockElement('video');
+  const btn1 = new MockElement('button');
+  btn1.setAttribute('aria-label', 'Закріпити презентацію користувача Ярослав');
+  tile1.appendChild(btn1);
+  tile1.appendChild(video1);
+
+  (globalThis as any).document = {
+    querySelectorAll: (sel: string) => (sel.includes('video') ? [video1] : []),
+    querySelector: () => null,
+  };
+
+  detector.scan();
+  assert.equal(detector.getScreenShares().length, 1);
+
+  // 1. Stream disappears from DOM
+  (globalThis as any).document = {
+    querySelectorAll: () => [],
+    querySelector: () => null,
+  };
+
+  // Immediate scan: still retained during 3.5s grace period
+  detector.scan();
+  assert.equal(detector.getScreenShares().length, 1);
+  assert.equal(detector.getScreenShares()[0].isAvailableInDom, false);
+
+  // 2. Mark video as ended -> next scan should prune immediately (0ms timeout)
+  (video1 as any).ended = true;
+  detector.scan();
+  assert.equal(detector.getScreenShares().length, 0, 'Ended stream must be pruned immediately');
+
+  delete (globalThis as any).document;
+});
+
+test('Does not merge distinct physical devices even with same participant name (different accounts)', () => {
+  const detector = new ScreenDetector();
+
+  const tile1 = new MockElement('div');
+  tile1.setAttribute('data-participant-id', 'dev-leon-1');
+  const video1 = new MockElement('video');
+  const btn1 = new MockElement('button');
+  btn1.setAttribute('aria-label', 'Закріпити презентацію користувача ЛЕОН');
+  tile1.appendChild(btn1);
+  tile1.appendChild(video1);
+
+  const tile2 = new MockElement('div');
+  tile2.setAttribute('data-participant-id', 'dev-leon-2');
+  const video2 = new MockElement('video');
+  const btn2 = new MockElement('button');
+  btn2.setAttribute('aria-label', 'Закріпити презентацію користувача Леон');
+  tile2.appendChild(btn2);
+  tile2.appendChild(video2);
+
+  (globalThis as any).document = {
+    querySelectorAll: (sel: string) => (sel.includes('video') ? [video1, video2] : []),
+    querySelector: () => null,
+  };
+
+  detector.scan();
+  const shares = detector.getScreenShares();
+
+  // Both distinct accounts/devices must exist with their own slots!
+  assert.equal(shares.length, 2, 'Must have 2 distinct slots for 2 distinct accounts');
+  assert.equal(shares[0].index, 1);
+  assert.equal(shares[1].index, 2);
 
   delete (globalThis as any).document;
 });
