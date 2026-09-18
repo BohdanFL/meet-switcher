@@ -34,7 +34,16 @@ function injectImportButton(): void {
     try {
       const group = parseLmsGroupPage(document, window.location.href);
       if (!group || group.students.length === 0) {
-        alert('Не вдалося знайти таблицю учнів (#group-student-grid). Перевірте, чи відкрита вкладка списку учнів.');
+        const hasGrid = Boolean(document.querySelector('#group-student-grid'));
+        if (!hasGrid) {
+          alert(
+            'Не вдалося знайти таблицю учнів (#group-student-grid).\nПеревірте, чи відкрита вкладка списку учнів у цій групі.'
+          );
+        } else {
+          alert(
+            'Таблицю учнів знайдено, але в ній не виявлено активних (зарахованих) учнів.\nУсі виявлені учні мають статус неактивних, перекладених або відрахованих.'
+          );
+        }
         btn.disabled = false;
         btn.innerHTML = '📥 Імпортувати в MeetSwitcher';
         return;

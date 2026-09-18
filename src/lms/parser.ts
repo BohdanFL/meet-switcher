@@ -85,10 +85,10 @@ export function parseLmsGroupPage(doc: ParentNode, pageUrl: string): StudentGrou
         continue;
       }
 
-      // Check status element inside row or surrounding item
-      const statusEl =
-        row.querySelector?.('.GroupStudent__col__status, .GroupStudent__status, .student-status') ||
-        row.parentElement?.querySelector?.('.GroupStudent__col__status, .GroupStudent__status, .student-status');
+      // Check status element inside row
+      const statusEl = row.querySelector?.(
+        '.GroupStudent__col__status, .GroupStudent__status, .student-status'
+      );
 
       if (statusEl) {
         const statusCls = statusEl.className;
@@ -107,15 +107,23 @@ export function parseLmsGroupPage(doc: ParentNode, pageUrl: string): StudentGrou
 
         const statusText = statusEl.textContent?.trim().toLowerCase() || '';
         if (statusText) {
-          // Must contain 'зарах' (e.g. 'зарахований')
-          // Non-active keywords: 'перекладен' (transferred), 'відрах' (expelled), 'неактивн', 'заморожен'
-          if (
-            !statusText.includes('зарах') ||
+          // Negative / inactive keywords in Ukrainian, Russian, and English
+          const isExplicitlyInactive =
             statusText.includes('перекладен') ||
+            statusText.includes('переведен') ||
             statusText.includes('відрах') ||
+            statusText.includes('отчисл') ||
             statusText.includes('неактивн') ||
-            statusText.includes('заморожен')
-          ) {
+            statusText.includes('заморожен') ||
+            statusText.includes('архів') ||
+            statusText.includes('архив') ||
+            statusText.includes('відхилен') ||
+            statusText.includes('пауз') ||
+            statusText.includes('transfer') ||
+            statusText.includes('expell') ||
+            statusText.includes('inactive');
+
+          if (isExplicitlyInactive) {
             continue;
           }
         }
