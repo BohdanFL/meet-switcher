@@ -49,6 +49,12 @@ class MockElement {
           results.push(child);
         } else if (selector.includes('role="tabpanel"') && child.getAttribute('role') === 'tabpanel') {
           results.push(child);
+        } else if (selector.includes('role="menuitem"') && child.getAttribute('role') === 'menuitem') {
+          results.push(child);
+        } else if (selector.includes('role="option"') && child.getAttribute('role') === 'option') {
+          results.push(child);
+        } else if (selector.includes('li') && child.tagName === 'LI') {
+          results.push(child);
         } else if (selector.includes('button') && child.tagName === 'BUTTON') {
           results.push(child);
         }
@@ -340,3 +346,169 @@ test('switchToShare unpins active stream and immediately notifies unpinned state
   }
 });
 
+test('handlePinMenuIfOpened strictly ignores generic dialogs (e.g. with Close button) and 3-dots menus', async () => {
+  const detector = new ScreenDetector();
+  const controller = new PinController(detector);
+
+  // Dialog with "Close" button (like what happened in the user log)
+  const dialog = new MockElement('div');
+  dialog.setAttribute('role', 'dialog');
+  let closeClicked = false;
+  const closeBtn = new MockElement('button', 'close');
+  closeBtn.setAttribute('aria-label', 'Close');
+  (closeBtn as any).dispatchEvent = () => {
+    closeClicked = true;
+    return true;
+  };
+  dialog.appendChild(closeBtn);
+
+  // 3-dots actions menu (with "Pin to screen", "Don't watch", etc.)
+  const moreMenu = new MockElement('div');
+  moreMenu.setAttribute('role', 'menu');
+  let morePinClicked = false;
+  const morePinItem = new MockElement('div', 'Pin to the screen');
+  morePinItem.setAttribute('role', 'menuitem');
+  (morePinItem as any).dispatchEvent = () => {
+    morePinClicked = true;
+    return true;
+  };
+  moreMenu.appendChild(morePinItem);
+
+  const doc = {
+    querySelectorAll: (sel: string) => {
+      if (sel.includes('dialog')) return [dialog];
+      if (sel.includes('menu')) return [moreMenu];
+      return [];
+    },
+  } as any;
+
+  const handled = await (controller as any).handlePinMenuIfOpened(doc);
+  assert.equal(handled, false, 'Must NOT handle or click generic dialogs or 3-dots menus');
+  assert.equal(closeClicked, false, 'Must NEVER click Close button on dialog');
+  assert.equal(morePinClicked, false, 'Must NEVER re-click 3-dots menu item');
+});
+
+test('handlePinMenuIfOpened detects genuine host pin menu and selects For myself only', async () => {
+  const detector = new ScreenDetector();
+  const controller = new PinController(detector);
+
+  const hostMenu = new MockElement('div');
+  hostMenu.setAttribute('role', 'menu');
+
+  let myselfClicked = false;
+  const myselfItem = new MockElement('div', 'Лише для мене');
+  myselfItem.setAttribute('role', 'menuitem');
+  (myselfItem as any).dispatchEvent = () => {
+    myselfClicked = true;
+    return true;
+  };
+
+  const everyoneItem = new MockElement('div', 'Для всіх');
+  everyoneItem.setAttribute('role', 'menuitem');
+
+  hostMenu.appendChild(everyoneItem);
+  hostMenu.appendChild(myselfItem);
+
+  const doc = {
+    querySelectorAll: (sel: string) => {
+      if (sel.includes('menu')) return [hostMenu];
+      return [];
+    },
+  } as any;
+
+  const handled = await (controller as any).handlePinMenuIfOpened(doc);
+  assert.equal(handled, true, 'Must handle genuine host pin menu');
+  assert.equal(myselfClicked, true, 'Must select "Лише для мене"');
+});
+
+test('unpinActiveStreams clicks ALL unpin buttons on stage, not just the first one', async () => {
+  const detector = new ScreenDetector();
+  const controller = new PinController(detector);
+
+  let clickCount = 0;
+  
+  const btn1 = new MockElement('button', 'keep_off');
+  btn1.setAttribute('aria-label', 'Unpin user 1');
+  (btn1 as any).dispatchEvent = () => { clickCount++; return true; };
+  
+  const btn2 = new MockElement('button', 'keep_off');
+  btn2.setAttribute('aria-label', 'Unpin user 2');
+  (btn2 as any).dispatchEvent = () => { clickCount++; return true; };
+
+  const prevDoc = (global as any).document;
+  (global as any).document = {
+    querySelectorAll: (sel: string) => {
+      if (sel.includes('button')) return [btn1, btn2];
+      return [];
+    }
+  };
+
+  try {
+    await controller.unpinActiveStreams();
+    assert.equal(clickCount, 2, 'Should click both unpin buttons');
+  } finally {
+    (global as any).document = prevDoc;
+  }
+});
+
+test('switchToShare unpins all existing pinned streams when pinning a new target', async () => {
+  const detector = new ScreenDetector();
+  const controller = new PinController(detector);
+
+  const share1 = { id: 's1', index: 1, participantName: 'User 1', isPinned: true, isAvailableInDom: true, tileElement: new MockElement('div') } as any;
+  const share2 = { id: 's2', index: 2, participantName: 'User 2', isPinned: true, isAvailableInDom: true, tileElement: new MockElement('div') } as any;
+  const targetShare = { id: 's3', index: 3, participantName: 'User 3', isPinned: false, isAvailableInDom: true, tileElement: new MockElement('div') } as any;
+  
+  const targetPinBtn = new MockElement('button');
+  targetPinBtn.setAttribute('aria-label', 'Pin');
+  targetShare.tileElement.appendChild(targetPinBtn);
+
+  (detector as any).knownShares.set(share1.id, share1);
+  (detector as any).knownShares.set(share2.id, share2);
+  (detector as any).knownShares.set(targetShare.id, targetShare);
+  (detector as any).currentShares = [share1, share2, targetShare];
+
+  // Mock global document
+  const prevDoc = (global as any).document;
+  
+  let unpinClicks = 0;
+  let targetPinClicked = false;
+  
+  (targetPinBtn as any).dispatchEvent = () => { targetPinClicked = true; return true; };
+  
+  const unpinBtn1 = new MockElement('button', 'keep_off');
+  unpinBtn1.setAttribute('aria-label', 'Unpin');
+  (unpinBtn1 as any).dispatchEvent = () => { unpinClicks++; return true; };
+  share1.tileElement.appendChild(unpinBtn1);
+
+  const unpinBtn2 = new MockElement('button', 'keep_off');
+  unpinBtn2.setAttribute('aria-label', 'Unpin');
+  (unpinBtn2 as any).dispatchEvent = () => { unpinClicks++; return true; };
+  share2.tileElement.appendChild(unpinBtn2);
+  
+  (global as any).document = {
+    body: {
+      contains: () => true
+    },
+    querySelectorAll: () => []
+  };
+
+  detector.findPinButton = (el: any) => {
+    if (el === targetShare.tileElement) return targetPinBtn as any;
+    return null;
+  };
+  
+  detector.findUnpinButton = (el: any) => {
+    if (el === share1.tileElement) return unpinBtn1 as any;
+    if (el === share2.tileElement) return unpinBtn2 as any;
+    return null;
+  };
+
+  try {
+    await controller.switchToShare(targetShare);
+    assert.equal(targetPinClicked, true, 'Should click pin button on target');
+    assert.equal(unpinClicks, 2, 'Should click unpin on both other shares');
+  } finally {
+    (global as any).document = prevDoc;
+  }
+});

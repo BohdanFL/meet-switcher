@@ -143,6 +143,7 @@ export class PinController {
           for (const share of allShares) {
             if (share.id !== target.id && share.isPinned && share.tileElement && document.body?.contains(share.tileElement)) {
               this.hoverTile(share.tileElement);
+              await this.sleep(40);
               const otherUnpin = this.detector.findUnpinButton(share.tileElement);
               if (otherUnpin) {
                 this.dispatchFullClick(otherUnpin);
@@ -236,6 +237,7 @@ export class PinController {
         for (const share of allShares) {
           if (share.id !== target.id && share.isPinned && share.tileElement) {
             this.hoverTile(share.tileElement);
+            await this.sleep(40);
             const otherUnpin = this.detector.findUnpinButton(share.tileElement);
             if (otherUnpin) {
               this.dispatchFullClick(otherUnpin);
@@ -320,6 +322,7 @@ export class PinController {
     for (const share of shares) {
       if (share.isPinned && share.tileElement && document.body.contains(share.tileElement)) {
         this.hoverTile(share.tileElement);
+        await this.sleep(40);
         const unpinBtn = this.detector.findUnpinButton(share.tileElement);
         if (unpinBtn) {
           this.dispatchFullClick(unpinBtn);
@@ -346,7 +349,6 @@ export class PinController {
           text.includes('keep_off')
         ) {
           this.dispatchFullClick(btn);
-          break;
         }
       }
     }
@@ -695,7 +697,7 @@ export class PinController {
 
       const menus = Array.from(
         targetDoc.querySelectorAll<HTMLElement>(
-          'div[role="menu"], ul[role="menu"], div[role="dialog"], div.VfPpkd-xl07Ob-XxIAqe'
+          'div[role="menu"], ul[role="menu"], div.VfPpkd-xl07Ob-XxIAqe'
         )
       );
 
@@ -708,12 +710,24 @@ export class PinController {
 
         if (items.length === 0) continue;
 
+        const forMyselfRegex = /(?:myself|for me|лише для мене|для мене|себе|себя)/i;
+        const forEveryoneRegex = /(?:everyone|all|для всіх|для всех)/i;
+
+        // STRICT CHECK: The menu MUST contain at least one option matching forMyselfRegex or forEveryoneRegex.
+        // Otherwise, it is an unrelated menu (e.g. 3-dots actions menu) and must NOT be clicked!
+        const hasHostPinOption = items.some((item) => {
+          const text = (item.textContent || '').trim().toLowerCase();
+          const aria = (item.getAttribute('aria-label') || '').trim().toLowerCase();
+          return forMyselfRegex.test(text) || forMyselfRegex.test(aria) || forEveryoneRegex.test(text) || forEveryoneRegex.test(aria);
+        });
+
+        if (!hasHostPinOption) {
+          continue;
+        }
+
         this.logger.log('MENU', `Host pin menu appeared with ${items.length} options`, {
           options: items.map((i) => i.textContent?.trim() || i.getAttribute('aria-label') || ''),
         });
-
-        const forMyselfRegex = /(?:myself|for me|мене|себе|себя)/i;
-        const forEveryoneRegex = /(?:everyone|all|всіх|всех)/i;
 
         // 1. Direct match: specifically target "Лише для мене" / "For myself only"
         for (const item of items) {
@@ -734,20 +748,29 @@ export class PinController {
           }
         }
 
-        // 2. Safe fallback: pick the option that does NOT contain "everyone" / "для всіх"
-        const safeItems = items.filter((item) => {
+        // 2. Safe fallback ONLY if the menu had an explicit "for everyone" option:
+        // pick the option that does NOT contain "everyone"
+        const hasEveryone = items.some((item) => {
           const text = (item.textContent || '').trim().toLowerCase();
           const aria = (item.getAttribute('aria-label') || '').trim().toLowerCase();
-          return !forEveryoneRegex.test(text) && !forEveryoneRegex.test(aria);
+          return forEveryoneRegex.test(text) || forEveryoneRegex.test(aria);
         });
 
-        if (safeItems.length > 0) {
-          console.log(
-            `[MeetSwitcher] Selected safe non-everyone pin option: "${safeItems[0].textContent?.trim()}"`
-          );
-          this.logger.log('MENU', `Selected safe fallback option: "${safeItems[0].textContent?.trim()}"`);
-          this.dispatchFullClick(safeItems[0]);
-          return true;
+        if (hasEveryone) {
+          const safeItems = items.filter((item) => {
+            const text = (item.textContent || '').trim().toLowerCase();
+            const aria = (item.getAttribute('aria-label') || '').trim().toLowerCase();
+            return !forEveryoneRegex.test(text) && !forEveryoneRegex.test(aria);
+          });
+
+          if (safeItems.length > 0) {
+            console.log(
+              `[MeetSwitcher] Selected safe non-everyone pin option: "${safeItems[0].textContent?.trim()}"`
+            );
+            this.logger.log('MENU', `Selected safe fallback option: "${safeItems[0].textContent?.trim()}"`);
+            this.dispatchFullClick(safeItems[0]);
+            return true;
+          }
         }
       }
     }
