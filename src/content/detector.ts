@@ -348,21 +348,21 @@ export class ScreenDetector {
     }
 
     // 3. Check for explicit unpin button on screen (English, Ukrainian, Russian)
-    const unpinBtn = document.querySelector<HTMLButtonElement>(
+    const unpinBtns = Array.from(document.querySelectorAll<HTMLButtonElement>(
       'button[aria-label*="unpin" i], button[aria-label*="відкріп" i], button[aria-label*="откреп" i], button[data-tooltip*="unpin" i], button[data-tooltip*="відкріп" i], button[data-tooltip*="откреп" i]'
-    );
-    if (unpinBtn) return true;
+    ));
+    if (unpinBtns.some(btn => btn.offsetParent !== null || btn.clientWidth > 0)) return true;
 
     // 4. Check for keep_off icon string anywhere
     const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
-    if (buttons.some((b) => (b.textContent || '').includes('keep_off'))) return true;
+    if (buttons.some((b) => (b.offsetParent !== null || b.clientWidth > 0) && (b.textContent || '').includes('keep_off'))) return true;
 
     // 5. Check for presentation zoom controls or ink canvas on page
     // (Google Meet ONLY renders zoom controls and ink canvas when a presentation is pinned on stage!)
-    const hasStageElement = document.querySelector(
+    const stageElements = Array.from(document.querySelectorAll<HTMLElement>(
       'button[aria-label*="zoom" i], button[data-tooltip*="zoom" i], .ink-canvas-parent, .ink-layer-container'
-    );
-    if (hasStageElement) return true;
+    ));
+    if (stageElements.some(el => el.offsetParent !== null || el.clientWidth > 0)) return true;
 
     // 6. Check if any video tile occupies >45% width or height, or >25% total viewport area
     try {
@@ -888,12 +888,16 @@ export class ScreenDetector {
     }
 
     // 3. Zoom buttons or ink canvas inside this tile
-    if (
-      tile.querySelector('.ink-canvas-parent, .ink-layer-container') ||
-      tile.querySelector('button[aria-label*="zoom" i], button[data-tooltip*="zoom" i]') ||
-      textContent.includes('zoom_in') ||
-      textContent.includes('zoom_out')
-    ) {
+    const zoomBtns = Array.from(tile.querySelectorAll<HTMLElement>('button[aria-label*="zoom" i], button[data-tooltip*="zoom" i], i'));
+    const hasVisibleZoom = zoomBtns.some(btn => {
+      if (btn.offsetParent === null && btn.clientWidth === 0) return false;
+      const t = btn.textContent || '';
+      return t.includes('zoom_in') || t.includes('zoom_out') || btn.matches('button[aria-label*="zoom" i], button[data-tooltip*="zoom" i]');
+    });
+
+    const hasVisibleInk = Array.from(tile.querySelectorAll<HTMLElement>('.ink-canvas-parent, .ink-layer-container')).some(el => el.offsetParent !== null || el.clientWidth > 0);
+
+    if (hasVisibleZoom || hasVisibleInk) {
       return true;
     }
 
@@ -1086,6 +1090,7 @@ export class ScreenDetector {
   public findPinButton(tile: HTMLElement): HTMLButtonElement | null {
     const buttons = Array.from(tile.querySelectorAll<HTMLButtonElement>('button'));
     for (const btn of buttons) {
+      if (btn.offsetParent === null && btn.clientWidth === 0) continue;
       const label = (btn.getAttribute('aria-label') || '').toLowerCase();
       const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
       const text = btn.textContent || '';
@@ -1120,6 +1125,7 @@ export class ScreenDetector {
   public findUnpinButton(tile: HTMLElement): HTMLButtonElement | null {
     const buttons = Array.from(tile.querySelectorAll<HTMLButtonElement>('button'));
     for (const btn of buttons) {
+      if (btn.offsetParent === null && btn.clientWidth === 0) continue;
       const label = (btn.getAttribute('aria-label') || '').toLowerCase();
       const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
       const text = btn.textContent || '';
