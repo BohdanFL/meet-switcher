@@ -414,6 +414,7 @@ export class PinController {
    */
   public findPresentationItemInPeoplePanel(participantName: string, doc: Document = (typeof document !== 'undefined' ? document : ({} as any)), requirePresentation = true): HTMLElement | null {
     const normTarget = this.detector.normalizeParticipantName(participantName);
+    const isTeacherSelf = normTarget.includes('ваш екран') || normTarget.includes('your screen') || normTarget.includes('ви') || normTarget.includes('you');
     if (!normTarget) return null;
 
     const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
@@ -439,7 +440,7 @@ export class PinController {
     for (const btn of allButtons) {
       const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
       if (
-        (aria.includes(normTarget) || aria.includes(participantName.toLowerCase())) &&
+        (aria.includes(normTarget) || aria.includes(participantName.toLowerCase()) || (isTeacherSelf && (aria.includes('you') || aria.includes('ви') || aria.includes('вы')))) &&
         (!requirePresentation || presentationRegex.test(aria))
       ) {
         const row =

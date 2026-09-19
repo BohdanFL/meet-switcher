@@ -471,7 +471,7 @@ export class ScreenDetector {
             '';
 
           const participantName = this.extractParticipantName(tile);
-          if (this.isTeacherScreenName(participantName) || !this.isValidParticipantName(participantName)) {
+          if (!this.isValidParticipantName(participantName)) {
             continue;
           }
 
@@ -1084,6 +1084,9 @@ export class ScreenDetector {
       .replace(/\s*\(презентація\)/i, '')
       .replace(/\s*\(presentation\)/i, '')
       .replace(/\s*\(презентация\)/i, '')
+      .replace(/\s*\(You\)$/i, '')
+      .replace(/\s*\(Ви\)$/i, '')
+      .replace(/\s*\(Вы\)$/i, '')
       .replace(/^(?:користувача\s+|користувач\s+)/i, '')
       .replace(/\s+на головному екрані$/i, '')
       .replace(/'s presentation$/i, '')
