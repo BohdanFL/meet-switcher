@@ -415,8 +415,8 @@
 
 /* Collapsed Pill View */
 .hud-container.collapsed {
-  width: auto;
-  border-radius: 20px;
+  width: 355px;
+  
 }
 
 .hud-container.collapsed .hud-header {
