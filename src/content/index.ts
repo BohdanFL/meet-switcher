@@ -184,16 +184,22 @@ async function initMeetSwitcher(): Promise<void> {
     for (const s of detector.getScreenShares()) {
       if (s.participantName) names.add(s.participantName);
     }
+    const addName = (t?: string | null) => {
+      if (!t) return;
+      // Use cast since cleanParticipantName/isValidParticipantName are private/public mixed
+      const cleanFn = (detector as any).cleanParticipantName ? (detector as any).cleanParticipantName.bind(detector) : (s: string) => s;
+      const validFn = (detector as any).isValidParticipantName ? (detector as any).isValidParticipantName.bind(detector) : () => true;
+      const cleaned = cleanFn(t.trim());
+      if (validFn(cleaned) && cleaned.length > 1) {
+        names.add(cleaned);
+      }
+    };
     const tileNames = document.querySelectorAll('[data-participant-id] [data-self-name], [data-participant-id] span.notranslate');
-    tileNames.forEach((el) => {
-      const t = el.textContent?.trim();
-      if (t) names.add(t);
-    });
+    tileNames.forEach((el) => addName(el.textContent));
+    
     const sidePanelNames = document.querySelectorAll('div[role="listitem"] span.zWGUib, div[role="listitem"] span.notranslate');
-    sidePanelNames.forEach((el) => {
-      const t = el.textContent?.trim();
-      if (t) names.add(t);
-    });
+    sidePanelNames.forEach((el) => addName(el.textContent));
+    
     return Array.from(names);
   };
 
