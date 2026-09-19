@@ -53,3 +53,20 @@ export function extractFirstName(fullName: string): string {
   return parts[0] || fullName;
 }
 
+export type RosterCategory = 'ACTIVE_SCREEN' | 'IN_CALL_NO_SCREEN' | 'GUEST' | 'ABSENT';
+
+export interface RosterParticipant {
+  id: string;
+  name: string;
+  category: RosterCategory;
+  screenShare?: import('./index.ts').ScreenShare;
+  tileElement?: HTMLElement | null;
+  isGuest?: boolean;
+}
+
+export interface ClassroomRosterState {
+  activeSharers: RosterParticipant[];
+  inCallNoScreen: RosterParticipant[];
+  guests: RosterParticipant[];
+  absentStudents: RosterParticipant[];
+}
