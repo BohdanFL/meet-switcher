@@ -412,7 +412,7 @@ export class PinController {
   /**
    * Finds the presentation list item corresponding to participantName in the People panel.
    */
-  public findPresentationItemInPeoplePanel(participantName: string, doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): HTMLElement | null {
+  public findPresentationItemInPeoplePanel(participantName: string, doc: Document = (typeof document !== 'undefined' ? document : ({} as any)), requirePresentation = true): HTMLElement | null {
     const normTarget = this.detector.normalizeParticipantName(participantName);
     if (!normTarget) return null;
 
@@ -440,7 +440,7 @@ export class PinController {
       const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
       if (
         (aria.includes(normTarget) || aria.includes(participantName.toLowerCase())) &&
-        presentationRegex.test(aria)
+        (!requirePresentation || presentationRegex.test(aria))
       ) {
         const row =
           (typeof btn.closest === 'function' &&
@@ -517,7 +517,7 @@ export class PinController {
   /**
    * Pins a participant's presentation reliably using Google Meet's People side panel.
    */
-  public async pinViaPeoplePanel(participantName: string, doc: Document = (typeof document !== 'undefined' ? document : ({} as any))): Promise<boolean> {
+  public async pinViaPeoplePanel(participantName: string, doc: Document = (typeof document !== 'undefined' ? document : ({} as any)), requirePresentation = true): Promise<boolean> {
     const isOpen = await this.openPeoplePanel(doc);
     if (!isOpen) {
       this.logger.log('WARN', `Failed to open People panel for pinning "${participantName}"`);
@@ -527,13 +527,13 @@ export class PinController {
     // Poll up to 400ms for the presentation row to appear
     let item: HTMLElement | null = null;
     for (let attempt = 0; attempt < 8; attempt++) {
-      item = this.findPresentationItemInPeoplePanel(participantName, doc);
+      item = this.findPresentationItemInPeoplePanel(participantName, doc, requirePresentation);
       if (item) break;
       await this.sleep(50);
     }
 
     if (!item) {
-      this.logger.log('WARN', `Could not find presentation item in People panel for "${participantName}"`);
+      this.logger.log('WARN', `Could not find ${requirePresentation ? 'presentation' : 'participant'} item in People panel for "${participantName}"`);
       return false;
     }
 

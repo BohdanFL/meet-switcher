@@ -197,7 +197,7 @@ export class SwitcherHud {
       `;
       
       li.addEventListener('click', () => {
-         this.controller.pinViaPeoplePanel(p.name);
+         this.controller.pinViaPeoplePanel(p.name, document, false);
       });
       return li;
     });

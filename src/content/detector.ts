@@ -24,6 +24,13 @@ const SYSTEM_ICON_STRINGS = new Set([
   'screen_share',
   'co_present',
   'desktop_windows',
+  'devices',
+  'videocam',
+  'videocam_off',
+  'remove_circle_outline',
+  'push_pin',
+  'keep',
+  'volume_mute',
 ]);
 
 /**
@@ -88,6 +95,7 @@ export class ScreenDetector {
   private knownShares: Map<string, ScreenShare> = new Map();
   private lastSeenMap: Map<string, number> = new Map();
   private participantSlots: Map<string, number> = new Map();
+  private participantNameToSlot: Map<string, number> = new Map();
   private knownPresentationVideos: Set<HTMLVideoElement> = new Set();
   private expectedPinnedParticipant: string | null = null;
   private listeners: Set<ScreenSharesListener> = new Set();
@@ -306,30 +314,33 @@ export class ScreenDetector {
       return false;
     }
 
-    // 1. Check known shares
+    // 1. Expected pinned participant set by switcher action
+    if (this.expectedPinnedParticipant) return true;
+
+    // 2. Check known shares
     if (this.currentShares.some((s) => s.isPinned)) return true;
     for (const share of this.knownShares.values()) {
       if (share.isPinned) return true;
     }
 
-    // 2. Check for explicit unpin button on screen (English, Ukrainian, Russian)
+    // 3. Check for explicit unpin button on screen (English, Ukrainian, Russian)
     const unpinBtn = document.querySelector<HTMLButtonElement>(
       'button[aria-label*="unpin" i], button[aria-label*="відкріп" i], button[aria-label*="откреп" i], button[data-tooltip*="unpin" i], button[data-tooltip*="відкріп" i], button[data-tooltip*="откреп" i]'
     );
     if (unpinBtn) return true;
 
-    // 3. Check for keep_off icon string anywhere
+    // 4. Check for keep_off icon string anywhere
     const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
     if (buttons.some((b) => (b.textContent || '').includes('keep_off'))) return true;
 
-    // 4. Check for presentation zoom controls or ink canvas on page
+    // 5. Check for presentation zoom controls or ink canvas on page
     // (Google Meet ONLY renders zoom controls and ink canvas when a presentation is pinned on stage!)
     const hasStageElement = document.querySelector(
       'button[aria-label*="zoom" i], button[data-tooltip*="zoom" i], .ink-canvas-parent, .ink-layer-container'
     );
     if (hasStageElement) return true;
 
-    // 5. Check if any video tile occupies >50% width and >50% height of viewport
+    // 6. Check if any video tile occupies >45% width or height, or >25% total viewport area
     try {
       if (typeof window !== 'undefined' && window.innerWidth && window.innerHeight) {
         const videos = Array.from(document.querySelectorAll<HTMLVideoElement>('video'));
@@ -337,7 +348,10 @@ export class ScreenDetector {
           const tile = this.findTileContainer(video);
           if (tile) {
             const rect = tile.getBoundingClientRect();
-            if (rect.width > window.innerWidth * 0.5 && rect.height > window.innerHeight * 0.5) {
+            if (
+              rect.width > window.innerWidth * 0.45 &&
+              rect.height > window.innerHeight * 0.45
+            ) {
               return true;
             }
           }
@@ -425,7 +439,7 @@ export class ScreenDetector {
           continue;
         }
 
-        if (this.isPresentationTile(tile)) {
+        if (this.isPresentationTile(tile, video)) {
           const participantId =
             tile.getAttribute('data-participant-id') ||
             tile.getAttribute('data-requested-participant-id') ||
@@ -462,7 +476,7 @@ export class ScreenDetector {
         }
       }
 
-      // Consolidate rawList: if a fallback pres- tile matches a device ID tile with same name, merge them
+      // Consolidate rawList: if multiple tiles match the same participant name (e.g. pinned stage vs filmstrip thumbnail)
       const consolidatedRawList: RawTile[] = [];
       for (const raw of rawList) {
         const norm = this.normalizeParticipantName(raw.participantName);
@@ -472,27 +486,20 @@ export class ScreenDetector {
         if (existingIdx >= 0) {
           const existing = consolidatedRawList[existingIdx];
           const rawIsRealDevice = raw.id.includes(':pres') && !raw.id.startsWith('pres-');
-          const existingIsRealDevice = existing.id.includes(':pres') && !existing.id.startsWith('pres-');
 
-          // If both have different real device IDs, they are two separate accounts/devices (e.g. ЛЕОН and Леон)
-          if (rawIsRealDevice && existingIsRealDevice && raw.id !== existing.id) {
-            consolidatedRawList.push(raw);
-            continue;
-          }
+          // Choose preferred tile (pinned tile > real device > with pin/unpin button)
+          const preferRaw = raw.isPinned || (!existing.isPinned && rawIsRealDevice);
+          const primary = preferRaw ? raw : existing;
+          const secondary = preferRaw ? existing : raw;
 
-          // Prefer tile with real device ID or explicit pin button
-          if (rawIsRealDevice) {
-            consolidatedRawList[existingIdx] = {
-              ...raw,
-              isPinned: existing.isPinned || raw.isPinned,
-              pinButton: raw.pinButton || existing.pinButton,
-              unpinButton: raw.unpinButton || existing.unpinButton,
-            };
-          } else {
-            existing.isPinned = existing.isPinned || raw.isPinned;
-            existing.pinButton = existing.pinButton || raw.pinButton;
-            existing.unpinButton = existing.unpinButton || raw.unpinButton;
-          }
+          consolidatedRawList[existingIdx] = {
+            ...primary,
+            id: (primary.id.includes(':pres') && !primary.id.startsWith('pres-')) ? primary.id : secondary.id,
+            participantName: existing.participantName, // retain consistent casing
+            isPinned: existing.isPinned || raw.isPinned,
+            pinButton: primary.pinButton || secondary.pinButton,
+            unpinButton: primary.unpinButton || secondary.unpinButton,
+          };
         } else {
           consolidatedRawList.push(raw);
         }
@@ -501,8 +508,8 @@ export class ScreenDetector {
       // Determine whether ANY presentation is currently pinned
       const isAnyPinned = consolidatedRawList.some((r) => r.isPinned) || this.isAnyStreamPinned();
 
-      // Assign stable slot indices (1..9)
-      const usedSlots = new Set(this.participantSlots.values());
+      // Assign stable slot indices (1..9) based on participant identity
+      const usedSlots = new Set(this.participantNameToSlot.values());
       const getNextFreeSlot = (): number => {
         let slot = 1;
         while (usedSlots.has(slot)) {
@@ -524,10 +531,13 @@ export class ScreenDetector {
         const normName = this.normalizeParticipantName(raw.participantName);
         const isGenericName = this.isGenericFallbackName(raw.participantName);
 
-        let slot = this.participantSlots.get(raw.id);
+        let slot = !isGenericName ? this.participantNameToSlot.get(normName) : undefined;
+        if (!slot) {
+          slot = this.participantSlots.get(raw.id);
+        }
         let existingShare = this.knownShares.get(raw.id);
 
-        // Reconnect / slot migration: if this participant had a previous slot whose tile is no longer in DOM
+        // Reconnect / slot migration: if this participant had a previous slot under another device ID
         if (!existingShare && !isGenericName) {
           for (const [oldId, known] of Array.from(this.knownShares.entries())) {
             const isOldStillInDom = consolidatedRawList.some((r) => r.id === oldId);
@@ -535,7 +545,7 @@ export class ScreenDetector {
               !isOldStillInDom &&
               this.normalizeParticipantName(known.participantName) === normName
             ) {
-              slot = this.participantSlots.get(oldId);
+              if (!slot) slot = known.index || this.participantSlots.get(oldId);
               this.knownShares.delete(oldId);
               this.lastSeenMap.delete(oldId);
               this.participantSlots.delete(oldId);
@@ -546,10 +556,33 @@ export class ScreenDetector {
           }
         }
 
+        // Clean up any stale entries in knownShares that have the same participant name under a different ID
+        if (!isGenericName) {
+          for (const [existingId, known] of Array.from(this.knownShares.entries())) {
+            if (
+              existingId !== raw.id &&
+              this.normalizeParticipantName(known.participantName) === normName
+            ) {
+              if (!slot) slot = known.index || this.participantSlots.get(existingId);
+              this.knownShares.delete(existingId);
+              this.lastSeenMap.delete(existingId);
+              this.participantSlots.delete(existingId);
+              existingShare = known;
+              this.logger.log(
+                'SCAN',
+                `Consolidated duplicate share for "${raw.participantName}": merged ${existingId} into ${raw.id}`
+              );
+            }
+          }
+        }
+
         if (!slot) {
           slot = getNextFreeSlot();
         }
         this.participantSlots.set(raw.id, slot);
+        if (!isGenericName) {
+          this.participantNameToSlot.set(normName, slot);
+        }
 
         const effectiveName =
           isGenericName && existingShare && !this.isGenericFallbackName(existingShare.participantName)
@@ -570,14 +603,22 @@ export class ScreenDetector {
       // Handle previously known shares that are NOT in the current DOM scan
       for (const [id, share] of Array.from(this.knownShares.entries())) {
         if (!activeCanonicalIds.has(id)) {
-          share.isPinned = false;
           share.isAvailableInDom = false;
 
           const streamEnded = this.isMediaStreamEnded(share.videoElement);
           // If media stream is explicitly ended, prune immediately (0ms).
-          // In grid mode (!isAnyPinned), prune after 3.5s (reflow guard).
-          // When a stream is pinned (isAnyPinned), keep up to 15s to tolerate Meet DOM virtualization.
-          const maxGracePeriod = streamEnded ? 0 : (isAnyPinned ? 15000 : 3500);
+          // While a stream is pinned (isAnyPinned), Google Meet intentionally virtualizes off-screen tiles.
+          // NEVER prune virtualized tiles on a short timer while someone is pinned! Keep them for the call duration (e.g. 15 min).
+          // In grid mode (!isAnyPinned), allow a generous 60-second grace period to tolerate Meet reflows/animations.
+          const maxGracePeriod = streamEnded ? 0 : (isAnyPinned ? 900000 : 60000);
+
+          // If this share was the pinned stream, do not unpin it unless another stream was pinned
+          // or global unpin was explicitly triggered
+          const anotherPinned = consolidatedRawList.some((r) => r.isPinned);
+          const isExplicitlyUnpinned = Date.now() < this.unpinnedUntil;
+          if (anotherPinned || isExplicitlyUnpinned) {
+            share.isPinned = false;
+          }
 
           const lastSeen = this.lastSeenMap.get(id) || 0;
           if (now - lastSeen >= maxGracePeriod) {
@@ -589,8 +630,25 @@ export class ScreenDetector {
         }
       }
 
-      // Build detected shares from knownShares registry
-      const detected: ScreenShare[] = Array.from(this.knownShares.values());
+      // Build detected shares from knownShares registry: strictly 1 share per participant name
+      const detectedMap = new Map<string, ScreenShare>();
+      for (const share of this.knownShares.values()) {
+        const norm = this.normalizeParticipantName(share.participantName);
+        const existing = detectedMap.get(norm);
+        if (!existing) {
+          detectedMap.set(norm, share);
+        } else {
+          // Prefer pinned share, or the one currently present in DOM
+          const preferShare = share.isPinned || (!existing.isPinned && share.isAvailableInDom);
+          if (preferShare) {
+            detectedMap.set(norm, {
+              ...share,
+              index: existing.index || share.index,
+            });
+          }
+        }
+      }
+      const detected: ScreenShare[] = Array.from(detectedMap.values());
 
       // Sort by index (1..9) so order remains rock-solid
       detected.sort((a, b) => a.index - b.index);
@@ -632,6 +690,7 @@ export class ScreenDetector {
 
   /**
    * Determine if the detected screen shares differ from the previous state.
+   * Compares user-visible attributes to prevent unnecessary HUD list re-rendering and DOM flicker.
    */
   private hasSharesChanged(next: ScreenShare[]): boolean {
     if (this.currentShares.length !== next.length) return true;
@@ -642,9 +701,7 @@ export class ScreenDetector {
         a.id !== b.id ||
         a.isPinned !== b.isPinned ||
         a.index !== b.index ||
-        a.participantName !== b.participantName ||
-        a.videoElement !== b.videoElement ||
-        a.isAvailableInDom !== b.isAvailableInDom
+        a.participantName !== b.participantName
       ) {
         return true;
       }
@@ -668,7 +725,7 @@ export class ScreenDetector {
    * STRICT: NEVER accepts a tile solely based on keep_outline/keep_off,
    * since all Google Meet webcam tiles have pin buttons!
    */
-  public isPresentationTile(tile: HTMLElement): boolean {
+  public isPresentationTile(tile: HTMLElement, videoElement?: HTMLVideoElement): boolean {
     // 0. Demo mock check
     if (tile.classList.contains('mock-student-tile') || tile.closest('.mock-student-tile')) {
       return true;
@@ -769,8 +826,17 @@ export class ScreenDetector {
 
     // 7. Persistent presentation video check: if this video element was previously verified
     // as a presentation, retain it even if buttons fade out
-    const video = tile.querySelector('video');
+    const video = videoElement || tile.querySelector('video');
     if (video && this.knownPresentationVideos.has(video)) {
+      return true;
+    }
+
+    // 8. Also check if participant ID or media ID was already recorded as a known presentation share
+    const participantId =
+      tile.getAttribute('data-participant-id') ||
+      tile.getAttribute('data-requested-participant-id') ||
+      tile.getAttribute('data-tile-media-id');
+    if (participantId && this.knownShares.has(`${participantId}:pres`)) {
       return true;
     }
 
@@ -807,11 +873,11 @@ export class ScreenDetector {
       return true;
     }
 
-    // 4. Check if tile occupies main center stage (>50% width and height of viewport)
+    // 4. Check if tile occupies main center stage (>45% width and height of viewport)
     try {
       if (typeof window !== 'undefined' && window.innerWidth && window.innerHeight) {
         const rect = tile.getBoundingClientRect();
-        if (rect.width > window.innerWidth * 0.5 && rect.height > window.innerHeight * 0.5) {
+        if (rect.width > window.innerWidth * 0.45 && rect.height > window.innerHeight * 0.45) {
           // If it occupies majority of screen and has no Pin button, it is the pinned tile
           if (this.findPinButton(tile) === null) {
             return true;
@@ -930,9 +996,12 @@ export class ScreenDetector {
     // Heuristic 4.5: Prefer Google Meet's standard name badge element (.notranslate)
     const notranslate = tile.querySelector('.notranslate');
     if (notranslate && notranslate.textContent) {
-      const cleaned = this.cleanParticipantName(notranslate.textContent.trim());
-      if (this.isValidParticipantName(cleaned)) {
-        return cleaned;
+      const text = notranslate.textContent.trim();
+      if (!SYSTEM_ICON_STRINGS.has(text)) {
+        const cleaned = this.cleanParticipantName(text);
+        if (this.isValidParticipantName(cleaned)) {
+          return cleaned;
+        }
       }
     }
 
@@ -988,9 +1057,9 @@ export class ScreenDetector {
   private cleanParticipantName(raw: string): string {
     return raw
       .replace(/^(?:презентація\s*:\s*|presentation\s*:\s*|презентация\s*:\s*)/i, '')
-      .replace(/\s*\(презентація\)$/i, '')
-      .replace(/\s*\(presentation\)$/i, '')
-      .replace(/\s*\(презентация\)$/i, '')
+      .replace(/\s*\(презентація\)/i, '')
+      .replace(/\s*\(presentation\)/i, '')
+      .replace(/\s*\(презентация\)/i, '')
       .replace(/^(?:користувача\s+|користувач\s+)/i, '')
       .replace(/\s+на головному екрані$/i, '')
       .replace(/'s presentation$/i, '')
