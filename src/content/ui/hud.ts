@@ -1,4 +1,4 @@
-import type { ScreenShare } from '../../types/index.ts';
+import type { ScreenShare, ClassroomRosterState, RosterParticipant } from '../../types/index.ts';
 import type { PinController } from '../pin-controller.ts';
 import { DraggableHud } from './drag-drop.ts';
 import { AliasManager } from '../alias-manager.ts';
@@ -18,6 +18,11 @@ export class SwitcherHud {
   private currentShares: ScreenShare[] = [];
   private aliasManager: AliasManager;
   private editingShareId: string | null = null;
+  private collapsedSections: Record<string, boolean> = {};
+  private onRefreshRosterHandler?: () => void;
+  public setOnRefreshRoster(handler: () => void): void {
+    this.onRefreshRosterHandler = handler;
+  }
 
   constructor(controller: PinController) {
     this.controller = controller;
@@ -52,6 +57,192 @@ export class SwitcherHud {
   /**
    * Update the list of displayed screen shares.
    */
+  
+  public async updateRoster(roster: ClassroomRosterState): Promise<void> {
+    this.currentShares = roster.activeSharers.map(r => r.screenShare).filter(Boolean) as ScreenShare[];
+    this.renderBadge();
+
+    let wrapper = this.listEl.querySelector('.roster-wrapper');
+    if (!wrapper) {
+      this.listEl.innerHTML = '<div class="roster-wrapper"></div>';
+      wrapper = this.listEl.querySelector('.roster-wrapper');
+    }
+
+    if (Object.keys(this.collapsedSections).length === 0) {
+      try {
+        const stored = await chrome.storage.local.get('meet_switcher_hud_collapsed_sections');
+        this.collapsedSections = stored['meet_switcher_hud_collapsed_sections'] || {};
+      } catch (e) {}
+    }
+
+    const buildSection = (key: string, title: string, count: number, participants: RosterParticipant[], renderItem: (p: RosterParticipant) => HTMLElement) => {
+      let section = wrapper!.querySelector(`[data-section="${key}"]`);
+      if (!section) {
+        section = document.createElement('div');
+        section.setAttribute('data-section', key);
+        wrapper!.appendChild(section);
+      }
+
+      const isCollapsed = Boolean(this.collapsedSections[key]);
+      
+      let header = section.querySelector('.roster-section-header');
+      if (!header) {
+        header = document.createElement('div');
+        header.className = 'roster-section-header';
+        header.addEventListener('click', () => {
+          this.collapsedSections[key] = !this.collapsedSections[key];
+          try {
+            chrome.storage.local.set({ 'meet_switcher_hud_collapsed_sections': this.collapsedSections });
+          } catch(e) {}
+          this.updateRoster(roster);
+        });
+        section.appendChild(header);
+      }
+      
+      header.className = `roster-section-header ${isCollapsed ? 'collapsed' : ''}`;
+      header.innerHTML = `
+        <span style="display: flex; align-items: center; gap: 4px;">
+          <span class="toggle-arrow">▾</span>
+          ${this.escapeHtml(title)}
+        </span>
+        <span class="section-count">${count}</span>
+      `;
+
+      let content = section.querySelector('.roster-section-content');
+      if (!content) {
+        content = document.createElement('div');
+        content.className = 'roster-section-content';
+        section.appendChild(content);
+      }
+      content.className = `roster-section-content ${isCollapsed ? 'collapsed' : ''}`;
+
+      const currentIds = new Set(participants.map(p => p.id));
+      
+      // Remove elements not in current roster
+      Array.from(content.children).forEach((child: any) => {
+        if (!currentIds.has(child.getAttribute('data-id') || '')) {
+          child.remove();
+        }
+      });
+
+      // Update / Append elements
+      let insertIndex = 0;
+      for (const p of participants) {
+        let el = content.querySelector(`[data-id="${p.id}"]`) as HTMLElement;
+        if (!el) {
+          el = renderItem(p);
+          el.setAttribute('data-id', p.id);
+        } else {
+          // Key-based state updates
+          const isPinned = p.screenShare?.isPinned;
+          const displayName = this.aliasManager.formatDisplayName(p.name);
+          
+          if (p.category === 'ACTIVE_SCREEN') {
+            el.className = `screen-item item-screen ${isPinned ? 'pinned' : ''}`;
+            const nameEl = el.querySelector('.screen-name');
+            if (nameEl && nameEl.textContent !== displayName) {
+              nameEl.textContent = displayName;
+            }
+            const statusEl = el.querySelector('.screen-status');
+            if (statusEl) statusEl.textContent = isPinned ? '📌' : '🖥️';
+          }
+        }
+
+        if (content.children[insertIndex] !== el) {
+          content.insertBefore(el, content.children[insertIndex]);
+        }
+        insertIndex++;
+      }
+    };
+
+    buildSection('active', 'З екраном', roster.activeSharers.length, roster.activeSharers, (p) => {
+      const share = p.screenShare;
+      const li = document.createElement('div');
+      li.className = `screen-item item-screen ${share?.isPinned ? 'pinned' : ''}`;
+      const displayName = this.aliasManager.formatDisplayName(p.name);
+      li.title = share?.isPinned ? 'Активний. Натисніть, щоб ВІДКРІПИТИ' : 'Закріпити екран';
+
+      li.innerHTML = `
+        <div class="screen-info">
+          <span class="screen-number">${share?.index || '-'}</span>
+          <div class="screen-name-wrap">
+            <span class="screen-name" title="${this.escapeHtml(displayName)}">${this.escapeHtml(displayName)}</span>
+            ${p.isGuest ? '<span class="badge-guest">Гість</span>' : ''}
+          </div>
+        </div>
+        <div class="screen-status">${share?.isPinned ? '📌' : '🖥️'}</div>
+      `;
+      
+      if (share) {
+         li.addEventListener('click', () => {
+           this.controller.switchToShare(share);
+         });
+      }
+      return li;
+    });
+
+    buildSection('inCall', 'Без екрана', roster.inCallNoScreen.length, roster.inCallNoScreen, (p) => {
+      const li = document.createElement('div');
+      li.className = 'screen-item item-no-screen';
+      const displayName = this.aliasManager.formatDisplayName(p.name);
+      
+      li.innerHTML = `
+        <div class="screen-info" style="padding-left: 2px;">
+          <div class="screen-name-wrap">
+            <span class="screen-name" title="${this.escapeHtml(displayName)}">${this.escapeHtml(displayName)}</span>
+            ${p.isGuest ? '<span class="badge-guest">Гість</span>' : ''}
+          </div>
+        </div>
+        <div class="screen-status" style="font-size: 11px; opacity: 0.6;">👁️</div>
+      `;
+      
+      li.addEventListener('click', () => {
+         this.controller.pinViaPeoplePanel(p.name);
+      });
+      return li;
+    });
+
+    buildSection('absent', 'Відсутні / Гості', roster.absentStudents.length, roster.absentStudents, (p) => {
+      const li = document.createElement('div');
+      li.className = 'screen-item item-absent';
+      li.innerHTML = `
+        <div class="screen-info" style="padding-left: 2px;">
+          <div class="screen-name-wrap">
+            <span class="screen-name">${this.escapeHtml(p.name)}</span>
+          </div>
+        </div>
+      `;
+      return li;
+    });
+
+    this.updateHeaderUnpinButton();
+  }
+
+  private updateHeaderUnpinButton(): void {
+    const hasPinned = this.currentShares.some((s) => s.isPinned);
+    let unpinHeaderBtn = this.shadow.querySelector<HTMLButtonElement>('.unpin-header-btn');
+    if (hasPinned) {
+      if (!unpinHeaderBtn) {
+        unpinHeaderBtn = document.createElement('button');
+        unpinHeaderBtn.className = 'icon-btn unpin-header-btn';
+        unpinHeaderBtn.title = 'Відкріпити активний екран (Alt + 0)';
+        unpinHeaderBtn.style.color = '#f28b82';
+        unpinHeaderBtn.innerHTML = '✕';
+        unpinHeaderBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.controller.unpin();
+        });
+        const actionsEl = this.shadow.querySelector('.hud-actions');
+        if (actionsEl) {
+          actionsEl.insertBefore(unpinHeaderBtn, actionsEl.firstChild);
+        }
+      }
+    } else if (unpinHeaderBtn) {
+      unpinHeaderBtn.remove();
+    }
+  }
+
+
   public update(shares: ScreenShare[]): void {
     this.currentShares = shares;
     this.renderBadge();
@@ -156,6 +347,13 @@ export class SwitcherHud {
     this.badgeEl = this.containerEl.querySelector<HTMLElement>('.hud-badge')!;
     this.listEl = this.containerEl.querySelector<HTMLElement>('.screen-list-wrap')!;
     this.toggleBtn = this.containerEl.querySelector<HTMLButtonElement>('.toggle-btn')!;
+
+    const refreshBtn = this.containerEl.querySelector<HTMLButtonElement>('.btn-refresh-roster');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => {
+        if (this.onRefreshRosterHandler) this.onRefreshRosterHandler();
+      });
+    }
 
     const speedBtn = this.containerEl.querySelector<HTMLButtonElement>('.speed-btn')!;
     speedBtn.addEventListener('click', () => {

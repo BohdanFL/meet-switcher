@@ -4,6 +4,7 @@
  */
 
 export const HUD_ACTIONS_HTML = `
+  <button class="icon-btn btn-refresh-roster" title="Оновити список (сканувати DOM)">🔄</button>
   <button class="icon-btn speed-btn active" title="Турбо-режим активний: анімації Google Meet вимкнено (Alt + A)">⚡</button>
   <button class="btn-demo-pill" style="display: none;" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪 Демо</button>
   <button class="icon-btn wall-btn" title="Стіна класу / Огляд (Alt + W)">⊞</button>

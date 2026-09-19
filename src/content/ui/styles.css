@@ -1095,3 +1095,72 @@
   background: #185abc;
 }
 
+/* Roster Sections */
+.roster-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(45, 46, 50, 0.7);
+  font-size: 11px;
+  font-weight: 600;
+  color: #bdc1c6;
+  cursor: pointer;
+  border-radius: 6px;
+  margin-top: 6px;
+  margin-bottom: 4px;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.roster-section-header:hover {
+  background: rgba(60, 64, 67, 0.9);
+}
+
+.roster-section-header.collapsed .toggle-arrow {
+  transform: rotate(-90deg);
+}
+
+.toggle-arrow {
+  display: inline-block;
+  transition: transform 0.2s ease;
+  width: 12px;
+}
+
+.roster-section-header .section-count {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  color: #e8eaed;
+}
+
+.roster-section-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.roster-section-content.collapsed {
+  display: none;
+}
+
+.item-no-screen {
+  background: rgba(45, 46, 50, 0.4);
+}
+
+.item-absent {
+  opacity: 0.5;
+  background: rgba(30, 31, 34, 0.3);
+  pointer-events: none;
+}
+
+.badge-guest {
+  font-size: 9px;
+  background: rgba(249, 171, 0, 0.2);
+  color: #fdd663;
+  padding: 1px 4px;
+  border-radius: 4px;
+  margin-left: 4px;
+  font-weight: 600;
+}
