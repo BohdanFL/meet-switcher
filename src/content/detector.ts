@@ -897,20 +897,7 @@ export class ScreenDetector {
       return true;
     }
 
-    // 4. Check if tile occupies main center stage (>45% width and height of viewport)
-    try {
-      if (typeof window !== 'undefined' && window.innerWidth && window.innerHeight) {
-        const rect = tile.getBoundingClientRect();
-        if (rect.width > window.innerWidth * 0.45 && rect.height > window.innerHeight * 0.45) {
-          // If it occupies majority of screen and has no Pin button, it is the pinned tile
-          if (this.findPinButton(tile) === null) {
-            return true;
-          }
-        }
-      }
-    } catch {
-      // Ignore geometry errors
-    }
+    
 
     return false;
   }
