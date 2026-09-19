@@ -195,6 +195,11 @@ export class ScreenDetector {
 
     // Reject names containing zoom or scale keywords
     if (/zoom|масштаб/i.test(trimmed)) return false;
+    
+    // Reject system icon strings
+    if (SYSTEM_ICON_STRINGS.has(trimmed) || SYSTEM_ICON_STRINGS.has(trimmed.toLowerCase())) {
+      return false;
+    }
 
     for (const pattern of SYSTEM_NAME_PATTERNS) {
       if (pattern.test(trimmed)) return false;
@@ -258,6 +263,25 @@ export class ScreenDetector {
       tileAria.includes('вы транслируете')
     ) {
       return true;
+    }
+
+    
+    // 1.5 Check data-self-name
+    const selfNameEl = tile.querySelector('[data-self-name]');
+    if (selfNameEl) {
+      const selfName = (selfNameEl.getAttribute('data-self-name') || '').toLowerCase();
+      if (selfName === 'you' || selfName === 'ви' || selfName === 'вы') {
+        return true;
+      }
+    }
+    
+    // 1.6 Check explicit "You" or "Ви" in notranslate (sometimes used for self)
+    const notranslateSelf = tile.querySelector('.notranslate');
+    if (notranslateSelf && notranslateSelf.textContent) {
+      const txt = notranslateSelf.textContent.trim().toLowerCase();
+      if (txt === 'you' || txt === 'ви' || txt === 'вы') {
+        return true;
+      }
     }
 
     // 2. Check for "Stop presenting" or "Your presentation" buttons inside tile
@@ -1054,7 +1078,7 @@ export class ScreenDetector {
     );
   }
 
-  private cleanParticipantName(raw: string): string {
+  public cleanParticipantName(raw: string): string {
     return raw
       .replace(/^(?:презентація\s*:\s*|presentation\s*:\s*|презентация\s*:\s*)/i, '')
       .replace(/\s*\(презентація\)/i, '')
