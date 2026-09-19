@@ -20,6 +20,10 @@ export class AttendanceModal {
     }
   }
 
+  public getActiveGroup(): StudentGroup | null {
+    return this.activeGroup;
+  }
+
   public isOpen(): boolean {
     return this.isVisible;
   }

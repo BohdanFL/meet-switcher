@@ -1,4 +1,4 @@
-import type { ScreenShare } from '../../types/index.ts';
+import type { ScreenShare, ClassroomRosterState } from '../../types/index.ts';
 import { AliasManager } from '../alias-manager.ts';
 
 interface WallCardItem {
@@ -19,10 +19,13 @@ export class ClassroomWall {
   private badgeEl!: HTMLElement;
   private isVisible = false;
   private currentShares: ScreenShare[] = [];
+  
+  private showAllAttendees = false;
   private cardsMap: Map<string, WallCardItem> = new Map();
   private onToggleDemoHandler?: () => void;
   private isDemoVisible = false;
   private aliasManager: AliasManager;
+  private onToggleAllAttendeesHandler?: (showAll: boolean) => void;
 
   constructor(shadow: ShadowRoot, onSelectShare: (share: ScreenShare) => void) {
     this.shadow = shadow;
@@ -80,6 +83,68 @@ export class ClassroomWall {
     this.cleanupVideos();
   }
 
+  
+  public setOnToggleAllAttendees(handler: (showAll: boolean) => void): void {
+    this.onToggleAllAttendeesHandler = handler;
+  }
+
+  public setShowAllAttendees(showAll: boolean): void {
+    this.showAllAttendees = showAll;
+    const toggleBtn = this.overlayEl?.querySelector<HTMLButtonElement>('.wall-toggle-all-btn');
+    if (toggleBtn) {
+      toggleBtn.classList.toggle('active', showAll);
+      toggleBtn.innerHTML = showAll ? '👥 Сховати учасників' : '👥 Показати всіх';
+    }
+    if (this.isVisible) this.render();
+  }
+
+  public updateRoster(roster: ClassroomRosterState): void {
+    
+    
+    // Build combined list for rendering based on mode
+    let displayList: ScreenShare[] = [];
+    
+    const active = roster.activeSharers.map(r => r.screenShare).filter(Boolean) as ScreenShare[];
+    displayList.push(...active);
+    
+    if (this.showAllAttendees) {
+      // Create virtual ScreenShare objects for attendees without screens
+      const virtualShares = roster.inCallNoScreen.map((p, idx) => {
+         return {
+           id: `virtual-${p.id}`,
+           index: 100 + idx, // Place after active screens
+           participantName: p.name,
+           isPinned: false,
+           isAvailableInDom: false,
+           tileElement: null as any,
+           videoElement: null,
+           isVirtual: true
+         } as ScreenShare & { isVirtual?: boolean };
+      });
+      displayList.push(...virtualShares);
+      
+      const virtualGuests = roster.guests.map((p, idx) => {
+         return {
+           id: `virtual-guest-${p.id}`,
+           index: 200 + idx, 
+           participantName: p.name,
+           isPinned: false,
+           isAvailableInDom: false,
+           tileElement: null as any,
+           videoElement: null,
+           isVirtual: true,
+           isGuest: true
+         } as ScreenShare & { isVirtual?: boolean, isGuest?: boolean };
+      });
+      displayList.push(...virtualGuests);
+    }
+    
+    this.currentShares = displayList;
+    if (this.isVisible) {
+      this.render();
+    }
+  }
+
   public updateShares(shares: ScreenShare[]): void {
     this.currentShares = shares;
     if (this.isVisible) {
@@ -104,6 +169,7 @@ export class ClassroomWall {
         <div class="wall-header-title">
           <span class="wall-title-text">⊞ Classroom Wall • Огляд екранів</span>
           <span class="wall-badge">0 екранів</span>
+          <button class="wall-toggle-all-btn btn-demo-pill" style="background: rgba(138, 180, 248, 0.15); color: #8ab4f8; border-color: rgba(138, 180, 248, 0.4);" title="Показати всіх у дзвінку">👥 Показати всіх</button>
           <button class="btn-demo-pill wall-demo-header-btn" style="display: none;" title="Тестовий демо-режим: 9 учнів (Alt + Shift + D)">🧪 Демо</button>
         </div>
         <div class="wall-header-hint">
@@ -123,6 +189,14 @@ export class ClassroomWall {
     this.gridEl = this.overlayEl.querySelector<HTMLElement>('.wall-grid')!;
     this.badgeEl = this.overlayEl.querySelector<HTMLElement>('.wall-badge')!;
 
+    const toggleAllBtn = this.overlayEl.querySelector<HTMLButtonElement>('.wall-toggle-all-btn')!;
+    toggleAllBtn.addEventListener('click', () => {
+      this.setShowAllAttendees(!this.showAllAttendees);
+      if (this.onToggleAllAttendeesHandler) {
+        this.onToggleAllAttendeesHandler(this.showAllAttendees);
+      }
+    });
+
     const closeBtn = this.overlayEl.querySelector<HTMLButtonElement>('.wall-close-btn')!;
     closeBtn.addEventListener('click', () => this.close());
 
@@ -136,7 +210,11 @@ export class ClassroomWall {
 
   private render(): void {
     const count = this.currentShares.length;
-    this.badgeEl.textContent = `${count} ${count === 1 ? 'екран' : 'екранів'}`;
+    if (this.showAllAttendees) {
+      this.badgeEl.textContent = `${count} ${count === 1 ? 'учасник' : 'учасників'}`;
+    } else {
+      this.badgeEl.textContent = `${count} ${count === 1 ? 'екран' : 'екранів'}`;
+    }
 
     if (count === 0) {
       this.cleanupVideos();
@@ -197,22 +275,51 @@ export class ClassroomWall {
     for (const share of this.currentShares) {
       const existing = this.cardsMap.get(share.id);
       const displayName = this.aliasManager.formatDisplayName(share.participantName);
-      const hasActiveStream = Boolean(share.isAvailableInDom && share.videoElement && share.videoElement.srcObject);
       const initials = this.getInitials(displayName);
+
+      const newStream = (share.videoElement?.srcObject as MediaStream | null) || null;
+      const existingStream = (existing?.videoEl?.srcObject as MediaStream | null) || null;
+      const isNewStreamLive = Boolean(
+        newStream &&
+        newStream.active &&
+        typeof newStream.getVideoTracks === 'function' &&
+        newStream.getVideoTracks().some((t) => t.readyState === 'live')
+      );
+      const isExistingStreamLive = Boolean(
+        existingStream &&
+        existingStream.active &&
+        typeof existingStream.getVideoTracks === 'function' &&
+        existingStream.getVideoTracks().some((t) => t.readyState === 'live')
+      );
+
+      const hasActiveStream = Boolean(
+        (share.isAvailableInDom && share.videoElement && share.videoElement.srcObject) ||
+        isNewStreamLive ||
+        isExistingStreamLive
+      );
 
       if (existing) {
         // Update attributes without re-creating DOM or touching the playing video!
         existing.share = share;
         existing.cardEl.className = `wall-card ${share.isPinned ? 'pinned' : ''}`;
-        existing.cardEl.title = `Закріпити екран ${displayName} (Alt + ${share.index})`;
+        if ((share as any).isVirtual) {
+          existing.cardEl.style.cursor = 'default';
+          existing.cardEl.title = displayName;
+        } else {
+          existing.cardEl.style.cursor = 'pointer';
+          existing.cardEl.title = `Закріпити екран ${displayName} (Alt + ${share.index})`;
+        }
         existing.numberEl.textContent = `${share.index}`;
         existing.nameEl.textContent = displayName;
         existing.statusEl.textContent = share.isPinned ? '📌 В центрі' : '';
         existing.statusEl.style.display = share.isPinned ? 'inline' : 'none';
 
         if (hasActiveStream) {
-          if (existing.videoEl.srcObject !== share.videoElement!.srcObject) {
-            existing.videoEl.srcObject = share.videoElement!.srcObject;
+          if (newStream && existing.videoEl.srcObject !== newStream) {
+            existing.videoEl.srcObject = newStream;
+            existing.videoEl.play().catch(() => {});
+          } else if (!existing.videoEl.srcObject && isNewStreamLive) {
+            existing.videoEl.srcObject = newStream;
             existing.videoEl.play().catch(() => {});
           }
           existing.videoEl.style.display = 'block';
@@ -231,12 +338,19 @@ export class ClassroomWall {
         // Create new card for this screen share
         const card = document.createElement('div');
         card.className = `wall-card ${share.isPinned ? 'pinned' : ''}`;
-        card.title = `Закріпити екран ${displayName} (Alt + ${share.index})`;
+        if ((share as any).isVirtual) {
+          card.style.cursor = 'default';
+          card.title = displayName;
+        } else {
+          card.style.cursor = 'pointer';
+          card.title = `Закріпити екран ${displayName} (Alt + ${share.index})`;
+        }
 
         card.innerHTML = `
           <div class="wall-card-badge">
-            <span class="wall-card-number">${share.index}</span>
+            <span class="wall-card-number">${(share as any).isVirtual ? '👤' : share.index}</span>
             <span class="wall-card-name">${this.escapeHtml(displayName)}</span>
+            ${(share as any).isGuest ? '<span class="wall-badge demo" style="font-size: 9px; margin-left: 6px;">Гість</span>' : ''}
             <button class="wall-card-rename-btn" title="Перейменувати учня (встановити псевдонім)">✏️</button>
             <span class="wall-card-status" style="${share.isPinned ? '' : 'display: none;'}">📌 В центрі</span>
           </div>
@@ -313,16 +427,19 @@ export class ClassroomWall {
         previewVideo.playsInline = true;
         previewVideo.style.display = hasActiveStream ? 'block' : 'none';
 
-        if (hasActiveStream && share.videoElement?.srcObject) {
-          previewVideo.srcObject = share.videoElement.srcObject;
+        const streamToPlay = newStream || (share.videoElement?.srcObject as MediaStream | null);
+        if (hasActiveStream && streamToPlay) {
+          previewVideo.srcObject = streamToPlay;
           previewVideo.play().catch(() => {});
         }
 
         videoWrap.appendChild(previewVideo);
 
         card.addEventListener('click', () => {
-          this.close();
-          this.onSelectShare(share);
+          if (!(share as any).isVirtual) {
+            this.close();
+            this.onSelectShare(share);
+          }
         });
 
         this.gridEl.appendChild(card);

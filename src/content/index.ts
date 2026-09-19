@@ -13,6 +13,7 @@ import { CallMonitor } from '../diagnostics/call-monitor.ts';
 import { GroupStore } from './attendance/group-store';
 import { CallTitleDetector } from './attendance/title-detector';
 import { AttendanceModal } from './ui/attendance-modal';
+import { RosterDetector } from './attendance/roster-detector.ts';
 
 // Prevent duplicate script execution
 declare global {
@@ -107,10 +108,17 @@ async function initMeetSwitcher(): Promise<void> {
       if (detector.isAnyStreamPinned()) {
         console.log('[MeetSwitcher] Unpinning to expand full grid for Classroom Wall...');
         await controller.unpin();
-        await new Promise((r) => setTimeout(r, 400));
-        detector.scan();
+        // Give Google Meet time to transition from stage to full grid
+        for (const delay of [250, 350, 500]) {
+          await new Promise((r) => setTimeout(r, delay));
+          detector.scan();
+          if (wall.isOpen()) {
+            refreshRosterState();
+          }
+        }
       }
-      wall.open(detector.getScreenShares());
+      wall.open();
+      refreshRosterState();
     } else {
       wall.close();
     }
@@ -147,9 +155,29 @@ async function initMeetSwitcher(): Promise<void> {
   await groupStore.init();
 
   const titleDetector = new CallTitleDetector();
+  const rosterDetector = new RosterDetector(detector);
   titleDetector.start();
 
   const attendanceModal = new AttendanceModal(hud.getShadowRoot(), groupStore);
+
+  
+  const refreshRosterState = () => {
+    const shares = detector.getScreenShares();
+    const activeNames = getActiveParticipantNames();
+    const group = attendanceModal.getActiveGroup();
+    const roster = rosterDetector.reconcileRoster(shares, activeNames, group ? group.students : undefined);
+    
+    hud.updateRoster(roster);
+    if (wall.isOpen()) {
+      wall.updateRoster(roster);
+    }
+  };
+  
+  hud.setOnRefreshRoster(() => {
+    detector.scan(); // This will trigger onScan and onUpdate
+    refreshRosterState();
+  });
+
 
   const getActiveParticipantNames = (): string[] => {
     const names = new Set<string>();
@@ -193,10 +221,7 @@ async function initMeetSwitcher(): Promise<void> {
     if (shares.length > 0) {
       callMonitor.markMeetingJoined();
     }
-    hud.update(shares);
-    if (wall.isOpen()) {
-      wall.updateShares(shares);
-    }
+    refreshRosterState();
     tileDecorator.updateBadges(shares);
   });
 
@@ -207,6 +232,7 @@ async function initMeetSwitcher(): Promise<void> {
     if (attendanceModal.isOpen()) {
       attendanceModal.update(getActiveParticipantNames());
     }
+    refreshRosterState();
   });
 
   // Re-render video tile badges whenever aliases are added, edited, or removed

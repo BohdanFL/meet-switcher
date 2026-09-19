@@ -20,6 +20,11 @@ class MockDomNode {
     add: (c: string) => { this.className += ` ${c}`; },
     remove: (c: string) => { this.className = this.className.replace(c, '').trim(); },
     contains: (c: string) => this.className.includes(c),
+    toggle: (c: string, force?: boolean) => {
+       const has = this.className.includes(c);
+       if (force === true || (!force && !has)) this.className += ` ${c}`;
+       else if (force === false || (!force && has)) this.className = this.className.replace(c, '').trim();
+    }
   };
 
   constructor(tagName: string) {
@@ -41,6 +46,9 @@ class MockDomNode {
       closeBtn.className = 'wall-close-btn';
       const demoBtn = new MockDomNode('button');
       demoBtn.className = 'wall-demo-header-btn';
+      const toggleAllBtn = new MockDomNode('button');
+      toggleAllBtn.className = 'wall-toggle-all-btn';
+      this.appendChild(toggleAllBtn);
       this.appendChild(grid);
       this.appendChild(badge);
       this.appendChild(closeBtn);
