@@ -1,6 +1,6 @@
 import { AliasManager } from '../alias-manager.ts';
 import { MEET_DICTIONARY } from './dictionary.ts';
-import { MeetSelectors } from './selectors.ts';
+
 
 export const SIDE_PANEL_BADGE_CLASS = 'meet-switcher-sidepanel-badge';
 export const SIDE_PANEL_ADD_BTN_CLASS = 'meet-switcher-sidepanel-add-btn';

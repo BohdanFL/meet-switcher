@@ -204,7 +204,7 @@ export class SwitcherHud {
       `;
       
       li.addEventListener('click', () => {
-         const latestP = this.controller.getDetector().getScreenShares().find(s => s.participantName === p.name) ? null : p; 
+
          const isCurrentlyPinned = this.controller.getDetector().getGlobalPinnedParticipantName() === p.name ||
            this.controller.getDetector().normalizeParticipantName(this.controller.getDetector().getGlobalPinnedParticipantName() || '').includes(this.controller.getDetector().normalizeParticipantName(p.name));
          

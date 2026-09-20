@@ -48,7 +48,7 @@ async function initMeetSwitcher(): Promise<void> {
 
   const animKiller = new AnimationKiller();
   const detector = new ScreenDetector();
-  const controller = new PinController(detector, animKiller);
+  const controller = new PinController(detector);
 
   // Expose convenient test utilities directly on window
   window.testPeoplePanel = () => {
