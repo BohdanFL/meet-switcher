@@ -13,70 +13,57 @@ export class PinController {
   private detector: ScreenDetector;
   private isSwitching = false;
   private logger: DiagnosticsLogger;
-  
+
   private sidePanel: MeetSidePanelUI;
   private grid: MeetGridUI;
 
   constructor(detector: ScreenDetector, logger?: DiagnosticsLogger) {
     this.detector = detector;
     this.logger = logger || DiagnosticsLogger.getInstance();
-    
+
     this.sidePanel = new MeetSidePanelUI(this.logger, this.detector);
     this.grid = new MeetGridUI(this.logger);
   }
 
-  /**
-   * Automatically switches to the most relevant presentation.
-   */
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+
+  /** Automatically switches to the most relevant presentation. */
   public async autoSwitch(): Promise<boolean> {
     const shares = this.detector.getScreenShares();
     if (shares.length === 0) return false;
-
     if (shares.some((s) => s.isPinned)) return true;
-
     return this.switchToShare(shares[0]);
   }
 
-  /**
-   * Switch to the next available screen share cyclically.
-   */
+  /** Switch to the next available screen share cyclically. */
   public async switchNext(): Promise<boolean> {
     const shares = this.detector.getScreenShares();
     if (shares.length === 0) return false;
-
-    const currentPinnedIndex = shares.findIndex((s) => s.isPinned);
-    const nextIndex = currentPinnedIndex === -1 ? 0 : (currentPinnedIndex + 1) % shares.length;
-    return this.switchToShare(shares[nextIndex]);
+    const cur = shares.findIndex((s) => s.isPinned);
+    return this.switchToShare(shares[cur === -1 ? 0 : (cur + 1) % shares.length]);
   }
 
-  /**
-   * Switch to the previous available screen share cyclically.
-   */
+  /** Switch to the previous available screen share cyclically. */
   public async switchPrevious(): Promise<boolean> {
     const shares = this.detector.getScreenShares();
     if (shares.length === 0) return false;
-
-    const currentPinnedIndex = shares.findIndex((s) => s.isPinned);
-    const prevIndex =
-      currentPinnedIndex === -1 ? shares.length - 1 : (currentPinnedIndex - 1 + shares.length) % shares.length;
-    return this.switchToShare(shares[prevIndex]);
+    const cur = shares.findIndex((s) => s.isPinned);
+    return this.switchToShare(shares[cur === -1 ? shares.length - 1 : (cur - 1 + shares.length) % shares.length]);
   }
 
-  /**
-   * Explicitly unpin any currently pinned stream (returns Meet to standard grid).
-   */
+  /** Explicitly unpin any currently pinned stream (returns Meet to standard grid). */
   public async unpin(): Promise<boolean> {
     if (this.isSwitching) {
       this.logger.log('WARN', 'Unpin request ignored: another switch operation is already active');
       return false;
     }
     this.isSwitching = true;
-
     try {
       await this.grid.unpinAll(this.detector.getScreenShares());
       this.detector.markAllUnpinned();
-      setTimeout(() => this.detector.scan(), 150);
-      setTimeout(() => this.detector.scan(), 550);
+      this.scheduleScans(150, 550);
       return true;
     } finally {
       this.isSwitching = false;
@@ -84,15 +71,10 @@ export class PinController {
   }
 
   /**
-   * Check if any stream is currently pinned.
-   */
-  private hasPinnedStream(): boolean {
-    return this.detector.getScreenShares().some((s) => s.isPinned);
-  }
-
-  /**
-   * Core switching logic: If already pinned -> Unpin (toggle). Otherwise unpin others and pin target.
-   * Resilient to Google Meet's 3-tile sidebar overflow by unpinning to expand the full grid when needed.
+   * Core switching logic.
+   * If already pinned → toggle-unpin.
+   * If tile in DOM   → pin via grid.
+   * If tile off-screen → try side panel, then expand grid and retry.
    */
   public async switchToShare(target: ScreenShare): Promise<boolean> {
     if (this.isSwitching) {
@@ -100,131 +82,41 @@ export class PinController {
       return false;
     }
     this.isSwitching = true;
-    const switchStartTime = Date.now();
+    const startTime = Date.now();
 
     try {
-      // Toggle behavior: If this exact share is ALREADY pinned, unpin it!
+      // 1. Toggle: already pinned → unpin
       if (target.isPinned) {
-        console.log(`[MeetSwitcher] "${target.participantName}" is already pinned. Unpinning...`);
-        this.logger.log('ACTION', `Unpinned active stream: "${target.participantName}"`);
-        await this.grid.unpinAll(this.detector.getScreenShares());
-        this.detector.markAllUnpinned();
-        setTimeout(() => this.detector.scan(), 150);
-        setTimeout(() => this.detector.scan(), 550);
-        return true;
+        return await this.unpinToggle(target);
       }
 
-      // Clear any unpin suppression since we are intentionally pinning a target
       this.detector.clearUnpinnedSuppress();
 
-      // Check whether target tile is currently in DOM and visible
-      let currentTile = target.tileElement;
-      let isInDom = Boolean(
-        currentTile &&
-        document.body.contains(currentTile) &&
-        currentTile.getBoundingClientRect().width > 0
-      );
+      let tile = target.tileElement;
+      let inDom = this.checkTileInDom(tile);
 
       this.logger.log('ACTION', `Request switch to [${target.index}] "${target.participantName}"`, {
         targetId: target.id,
-        isInDom,
+        isInDom: inDom,
       });
 
-      // If off-screen (because Google Meet in sidebar mode only renders ~3 tiles):
-      if (!isInDom) {
-        this.logger.log('ACTION', `Tile off-screen, attempting People panel pinning for "${target.participantName}"`);
-
-        const pinnedViaPanel = await this.sidePanel.pinParticipant(target.participantName);
-        if (pinnedViaPanel) {
-          const elapsedMs = Date.now() - switchStartTime;
-          this.logger.recordSwitch(target.participantName, target.index, true);
-          this.logger.log('ACTION', `Successfully switched to [${target.index}] "${target.participantName}" via People panel in ${elapsedMs}ms`);
-
-          // Clean up any previously pinned screens (if multi-pin kept them)
-          const allShares = this.detector.getScreenShares();
-          for (const share of allShares) {
-            if (share.id !== target.id && share.isPinned && share.tileElement && document.body?.contains(share.tileElement)) {
-              await this.grid.unpinTile(share.tileElement);
-            }
-          }
-
-          setTimeout(() => this.detector.scan(), 100);
-          return true;
-        }
-
-        console.log(
-          `[MeetSwitcher] People panel pinning unavailable or failed for "${target.participantName}". Expanding Meet grid...`
-        );
-        this.logger.log('ACTION', `People panel pinning failed, expanding grid for "${target.participantName}"`);
-        await this.grid.unpinAll(this.detector.getScreenShares());
-        this.detector.markAllUnpinned();
-
-        // Google Meet needs 200-400ms to reflow and mount all tiles into the DOM.
-        // Poll with retries for up to 800ms (16 attempts * 50ms)
-        const targetNorm = this.detector.normalizeParticipantName(target.participantName);
-        let locatedAttempt = -1;
-        for (let attempt = 0; attempt < 16; attempt++) {
-          await sleep(50);
-          const fresh = this.detector.scan();
-          const refreshed = fresh.find((s) =>
-            s.id === target.id ||
-            s.index === target.index ||
-            this.detector.normalizeParticipantName(s.participantName) === targetNorm
-          );
-          if (refreshed?.tileElement && document.body?.contains(refreshed.tileElement)) {
-            currentTile = refreshed.tileElement;
-            target = refreshed;
-            isInDom = true;
-            locatedAttempt = attempt + 1;
-            break;
-          }
-        }
-
-        if (isInDom) {
-          this.logger.log('ACTION', `Off-screen tile located after ${locatedAttempt * 50}ms grid expansion`, {
-            participantName: target.participantName,
-            attempt: locatedAttempt,
-          });
-        }
+      // 2. Off-screen: try side panel then expand grid
+      if (!inDom) {
+        const offscreen = await this.handleOffscreen(target, startTime);
+        if (offscreen.done) return offscreen.success;
+        target = offscreen.target;
+        tile = target.tileElement ?? null;
+        inDom = this.checkTileInDom(tile);
       }
 
-      if (!currentTile || !document.body.contains(currentTile)) {
-        const snap = this.logger.captureDomSnapshot(this.hasPinnedStream());
-        this.logger.recordSwitch(target.participantName, target.index, false, 'Tile not in DOM');
-        this.logger.log('ERROR', `Could not locate tile for "${target.participantName}"`, { targetId: target.id }, snap);
-        console.warn(`[MeetSwitcher] Could not locate tile for "${target.participantName}"`);
-        return false;
+      // 3. Still not in DOM after all attempts → fail
+      if (!tile || !document.body.contains(tile)) {
+        return this.failSwitch(target, 'Tile not in DOM');
       }
 
-      // Notify detector about who is expected to be pinned on center stage
-      this.detector.setExpectedPinnedParticipant(target.participantName);
+      // 4. Pin via grid
+      return await this.pinFromGrid(tile, target, startTime);
 
-      // 1. Ensure target tile has valid geometry
-      await this.grid.ensureTileVisible(currentTile);
-
-      // 2. Pin Tile using Grid UI
-      const pinned = await this.grid.pinTile(currentTile, target.participantName);
-
-      if (pinned) {
-        const elapsedMs = Date.now() - switchStartTime;
-        this.logger.recordSwitch(target.participantName, target.index, true);
-        this.logger.log('ACTION', `Successfully switched to [${target.index}] "${target.participantName}" in ${elapsedMs}ms`);
-
-        // Clean up any previously pinned screens (if multi-pin kept them)
-        const allShares = this.detector.getScreenShares();
-        for (const share of allShares) {
-          if (share.id !== target.id && share.isPinned && share.tileElement) {
-            await this.grid.unpinTile(share.tileElement);
-          }
-        }
-
-        setTimeout(() => this.detector.scan(), 100);
-        return true;
-      }
-
-      this.logger.recordSwitch(target.participantName, target.index, false, 'Pin button missing');
-      this.logger.log('ERROR', 'Pin button missing on tile');
-      return false;
     } catch (err: any) {
       this.logger.recordSwitch(target.participantName, target.index, false, err.message);
       console.error(`[MeetSwitcher] Failed to switch to [${target.index}] ${target.participantName}:`, err);
@@ -238,8 +130,143 @@ export class PinController {
     }
   }
 
-  // --- Methods retained for backwards compatibility with tests / API ---
-  
+  // ---------------------------------------------------------------------------
+  // Private helpers — each has one clear responsibility
+  // ---------------------------------------------------------------------------
+
+  /** Handles the already-pinned toggle case. */
+  private async unpinToggle(target: ScreenShare): Promise<boolean> {
+    console.log(`[MeetSwitcher] "${target.participantName}" is already pinned. Unpinning...`);
+    this.logger.log('ACTION', `Unpinned active stream: "${target.participantName}"`);
+    await this.grid.unpinAll(this.detector.getScreenShares());
+    this.detector.markAllUnpinned();
+    this.scheduleScans(150, 550);
+    return true;
+  }
+
+  /**
+   * Handles off-screen tiles.
+   * 1. Try to pin via the side panel.
+   * 2. If that fails, expand the grid and poll until the tile appears.
+   *
+   * Returns `{ done: true, success }` when the result is final,
+   * or `{ done: false, target }` when the tile was found and grid-pinning should continue.
+   */
+  private async handleOffscreen(
+    target: ScreenShare,
+    startTime: number,
+  ): Promise<{ done: true; success: boolean } | { done: false; target: ScreenShare }> {
+    this.logger.log('ACTION', `Tile off-screen, attempting People panel pinning for "${target.participantName}"`);
+
+    // Path A: side panel
+    const pinnedViaPanel = await this.sidePanel.pinParticipant(target.participantName);
+    if (pinnedViaPanel) {
+      this.logger.recordSwitch(target.participantName, target.index, true);
+      this.logger.log('ACTION', `Successfully switched to [${target.index}] "${target.participantName}" via People panel in ${Date.now() - startTime}ms`);
+      await this.cleanupOtherPins(target.id);
+      this.scheduleScans(100);
+      return { done: true, success: true };
+    }
+
+    // Path B: expand grid and poll for tile
+    console.log(`[MeetSwitcher] People panel pinning unavailable or failed for "${target.participantName}". Expanding Meet grid...`);
+    this.logger.log('ACTION', `People panel pinning failed, expanding grid for "${target.participantName}"`);
+    await this.grid.unpinAll(this.detector.getScreenShares());
+    this.detector.markAllUnpinned();
+
+    const refreshed = await this.pollForTile(target);
+    return { done: false, target: refreshed ?? target };
+  }
+
+  /**
+   * Polls the detector after a grid-expand unpin, waiting for the target tile
+   * to appear in the DOM. Returns the refreshed ScreenShare or null.
+   */
+  private async pollForTile(target: ScreenShare): Promise<ScreenShare | null> {
+    const normTarget = this.detector.normalizeParticipantName(target.participantName);
+
+    for (let attempt = 0; attempt < 16; attempt++) {
+      await sleep(50);
+      const fresh = this.detector.scan();
+      const found = fresh.find(
+        (s) =>
+          s.id === target.id ||
+          s.index === target.index ||
+          this.detector.normalizeParticipantName(s.participantName) === normTarget,
+      );
+      if (found?.tileElement && document.body?.contains(found.tileElement)) {
+        this.logger.log('ACTION', `Off-screen tile located after ${(attempt + 1) * 50}ms grid expansion`, {
+          participantName: found.participantName,
+          attempt: attempt + 1,
+        });
+        return found;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Pins a tile that is confirmed to be in the DOM.
+   * Handles geometry, hover, click, host menu, and cleanup of other pins.
+   */
+  private async pinFromGrid(tile: HTMLElement, target: ScreenShare, startTime: number): Promise<boolean> {
+    this.detector.setExpectedPinnedParticipant(target.participantName);
+    await this.grid.ensureTileVisible(tile);
+
+    const pinned = await this.grid.pinTile(tile, target.participantName);
+
+    if (pinned) {
+      this.logger.recordSwitch(target.participantName, target.index, true);
+      this.logger.log('ACTION', `Successfully switched to [${target.index}] "${target.participantName}" in ${Date.now() - startTime}ms`);
+      await this.cleanupOtherPins(target.id);
+      this.scheduleScans(100);
+      return true;
+    }
+
+    this.logger.recordSwitch(target.participantName, target.index, false, 'Pin button missing');
+    this.logger.log('ERROR', 'Pin button missing on tile');
+    return false;
+  }
+
+  /** Unpins all other currently-pinned shares (cleanup after a successful pin). */
+  private async cleanupOtherPins(targetId: string): Promise<void> {
+    const allShares = this.detector.getScreenShares();
+    for (const share of allShares) {
+      if (share.id !== targetId && share.isPinned && share.tileElement && document.body?.contains(share.tileElement)) {
+        await this.grid.unpinTile(share.tileElement);
+      }
+    }
+  }
+
+  /** Schedules one or more detector scans at the given delay(s). */
+  private scheduleScans(...delaysMs: number[]): void {
+    for (const ms of delaysMs) {
+      setTimeout(() => this.detector.scan(), ms);
+    }
+  }
+
+  /** Returns true when a tile element is visible and contained in the DOM. */
+  private checkTileInDom(tile: HTMLElement | null | undefined): boolean {
+    return Boolean(tile && document.body.contains(tile) && tile.getBoundingClientRect().width > 0);
+  }
+
+  /** Logs a failed switch and returns false. */
+  private failSwitch(target: ScreenShare, reason: string): boolean {
+    const snap = this.logger.captureDomSnapshot(this.hasPinnedStream());
+    this.logger.recordSwitch(target.participantName, target.index, false, reason);
+    this.logger.log('ERROR', `Could not locate tile for "${target.participantName}"`, { targetId: target.id }, snap);
+    console.warn(`[MeetSwitcher] Could not locate tile for "${target.participantName}"`);
+    return false;
+  }
+
+  private hasPinnedStream(): boolean {
+    return this.detector.getScreenShares().some((s) => s.isPinned);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Backwards-compatible API used by tests and hud.ts
+  // ---------------------------------------------------------------------------
+
   public getDetector(): ScreenDetector {
     return this.detector;
   }
@@ -249,8 +276,7 @@ export class PinController {
   }
 
   public async switchToIndex(index: number): Promise<boolean> {
-    const shares = this.detector.getScreenShares();
-    const target = shares.find(s => s.index === index);
+    const target = this.detector.getScreenShares().find((s) => s.index === index);
     if (!target) return false;
     return this.switchToShare(target);
   }
