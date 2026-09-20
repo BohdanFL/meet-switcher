@@ -145,6 +145,11 @@ export class SwitcherHud {
             }
             const statusEl = el.querySelector('.screen-status');
             if (statusEl) statusEl.textContent = isPinned ? '📌' : '🖥️';
+          } else if (p.category === 'IN_CALL_NO_SCREEN' || p.category === 'GUEST') {
+            const isPinnedNoScreen = p.isPinned;
+            el.className = `screen-item ${p.category === 'GUEST' ? 'item-absent' : 'item-no-screen'} ${isPinnedNoScreen ? 'pinned' : ''}`;
+            const statusEl = el.querySelector('.screen-status');
+            if (statusEl) statusEl.textContent = isPinnedNoScreen ? '📌' : '👁️';
           }
         }
 
@@ -183,7 +188,9 @@ export class SwitcherHud {
 
     buildSection('inCall', 'Без екрана', roster.inCallNoScreen.length, roster.inCallNoScreen, (p) => {
       const li = document.createElement('div');
-      li.className = 'screen-item item-no-screen';
+      const isPinned = p.isPinned;
+      li.className = `screen-item item-no-screen ${isPinned ? 'pinned' : ''}`;
+      
       const displayName = this.aliasManager.formatDisplayName(p.name);
       
       li.innerHTML = `
@@ -193,25 +200,46 @@ export class SwitcherHud {
             ${p.isGuest ? '<span class="badge-guest">Гість</span>' : ''}
           </div>
         </div>
-        <div class="screen-status" style="font-size: 11px; opacity: 0.6;">👁️</div>
+        <div class="screen-status" style="font-size: 11px; opacity: 0.6;">${isPinned ? '📌' : '👁️'}</div>
       `;
       
       li.addEventListener('click', () => {
-         this.controller.pinViaPeoplePanel(p.name, document, false);
+         const latestP = this.controller.getDetector().getScreenShares().find(s => s.participantName === p.name) ? null : p; 
+         const isCurrentlyPinned = this.controller.getDetector().getGlobalPinnedParticipantName() === p.name ||
+           this.controller.getDetector().normalizeParticipantName(this.controller.getDetector().getGlobalPinnedParticipantName() || '').includes(this.controller.getDetector().normalizeParticipantName(p.name));
+         
+         if (isCurrentlyPinned) {
+           this.controller.unpinActiveStreams();
+         } else {
+           this.controller.pinViaPeoplePanel(p.name, document, false);
+         }
       });
       return li;
     });
 
     buildSection('absent', 'Відсутні / Гості', roster.absentStudents.length, roster.absentStudents, (p) => {
       const li = document.createElement('div');
-      li.className = 'screen-item item-absent';
+      const isPinned = p.isPinned;
+      li.className = `screen-item item-absent ${isPinned ? 'pinned' : ''}`;
       li.innerHTML = `
         <div class="screen-info" style="padding-left: 2px;">
           <div class="screen-name-wrap">
             <span class="screen-name">${this.escapeHtml(p.name)}</span>
           </div>
         </div>
+        <div class="screen-status" style="font-size: 11px; opacity: 0.6;">${isPinned ? '📌' : '👁️'}</div>
       `;
+      
+      li.addEventListener('click', () => {
+         const isCurrentlyPinned = this.controller.getDetector().getGlobalPinnedParticipantName() === p.name ||
+           this.controller.getDetector().normalizeParticipantName(this.controller.getDetector().getGlobalPinnedParticipantName() || '').includes(this.controller.getDetector().normalizeParticipantName(p.name));
+         
+         if (isCurrentlyPinned) {
+           this.controller.unpinActiveStreams();
+         } else {
+           this.controller.pinViaPeoplePanel(p.name, document, false);
+         }
+      });
       return li;
     });
 

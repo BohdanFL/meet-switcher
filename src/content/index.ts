@@ -167,6 +167,19 @@ async function initMeetSwitcher(): Promise<void> {
     const group = attendanceModal.getActiveGroup();
     const roster = rosterDetector.reconcileRoster(shares, activeNames, group ? group.students : undefined);
     
+    // Inject pinning state for webcams (inCallNoScreen) based on expected pinned participant
+    // or global unpin buttons.
+    const pinnedName = detector.getGlobalPinnedParticipantName();
+    if (pinnedName) {
+      const normPinned = detector.normalizeParticipantName(pinnedName);
+      roster.inCallNoScreen.forEach(p => {
+        const normP = detector.normalizeParticipantName(p.name);
+        if (normP.includes(normPinned) || normPinned.includes(normP)) {
+          p.isPinned = true;
+        }
+      });
+    }
+
     hud.updateRoster(roster);
     if (wall.isOpen()) {
       wall.updateRoster(roster);

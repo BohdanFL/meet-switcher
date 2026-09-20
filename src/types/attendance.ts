@@ -62,6 +62,7 @@ export interface RosterParticipant {
   screenShare?: import('./index.ts').ScreenShare;
   tileElement?: HTMLElement | null;
   isGuest?: boolean;
+  isPinned?: boolean;
 }
 
 export interface ClassroomRosterState {

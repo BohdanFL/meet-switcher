@@ -436,9 +436,12 @@ export class ClassroomWall {
         videoWrap.appendChild(previewVideo);
 
         card.addEventListener('click', () => {
-          if (!(share as any).isVirtual) {
+          // Always look up the latest share object from the cards map
+          const latestItem = this.cardsMap.get(share.id);
+          const latestShare = latestItem ? latestItem.share : share;
+          if (!(latestShare as any).isVirtual) {
             this.close();
-            this.onSelectShare(share);
+            this.onSelectShare(latestShare);
           }
         });
 

@@ -1,5 +1,6 @@
 import type { ScreenShare, ScreenSharesListener } from '../types/index.ts';
 import { DiagnosticsLogger } from '../diagnostics/logger.ts';
+import { MeetSelectors } from './ui/selectors.ts';
 
 /**
  * Known icon names used by Google Meet to filter out of participant name detection.
@@ -141,6 +142,36 @@ export class ScreenDetector {
     }
   }
 
+  public getExpectedPinnedParticipant(): string | null {
+    return this.expectedPinnedParticipant;
+  }
+
+  /**
+   * Tries to find the currently pinned participant name from the global UI,
+   * in case they were pinned manually by the user (webcam or presentation).
+   */
+  public getGlobalPinnedParticipantName(): string | null {
+    if (this.expectedPinnedParticipant) return this.expectedPinnedParticipant;
+
+    const unpinBtns = MeetSelectors.findGlobalUnpinButtons(document);
+
+    const activeBtn = unpinBtns.find(btn => btn.offsetParent !== null || btn.clientWidth > 0);
+    if (!activeBtn) return null;
+
+    const label = activeBtn.getAttribute('aria-label') || activeBtn.getAttribute('data-tooltip') || '';
+    
+    // Check for explicit localized string matches like "Unpin <Name>" or "Відкріпити <Name>"
+    const matchUa = label.match(
+      /(?:Відкріпити|Unpin|Открепить)\s+(?:презентацію\s+(?:користувача\s+)?)?(.+?)(?:\s+на головному екрані|\s+на екрані|\s*\(презентація\)|\s+презентацію|\s+презентацию|'s presentation|$)/i
+    );
+    if (matchUa && matchUa[1]) {
+      const cleaned = this.cleanParticipantName(matchUa[1]);
+      if (this.isValidParticipantName(cleaned)) return cleaned;
+    }
+
+    return null;
+  }
+
   /**
    * Clear pinned state across all known shares (e.g. after global unpin)
    * and immediately notify UI to remove active highlights.
@@ -244,90 +275,7 @@ export class ScreenDetector {
     return false;
   }
 
-  /**
-   * Determine whether a tile is the teacher's own presentation.
-   * Checks for "Stop presenting" buttons, "Your presentation" badges, etc.
-   */
-  public isTeacherPresentationTile(tile: HTMLElement): boolean {
-    if (!tile) return false;
 
-    // 1. Check tile aria-label
-    const tileAria = (tile.getAttribute('aria-label') || '').toLowerCase();
-    if (
-      tileAria.includes('your presentation') ||
-      tileAria.includes('ваша презентація') ||
-      tileAria.includes('вашу презентацію') ||
-      tileAria.includes('ваша презентация') ||
-      tileAria.includes('ви транслюєте') ||
-      tileAria.includes('you are presenting') ||
-      tileAria.includes('вы транслируете')
-    ) {
-      return true;
-    }
-
-    
-    // 1.5 Check data-self-name
-    const selfNameEl = tile.querySelector('[data-self-name]');
-    if (selfNameEl) {
-      const selfName = (selfNameEl.getAttribute('data-self-name') || '').toLowerCase();
-      if (selfName === 'you' || selfName === 'ви' || selfName === 'вы') {
-        return true;
-      }
-    }
-    
-    // 1.6 Check explicit "You" or "Ви" in notranslate (sometimes used for self)
-    const notranslateSelf = tile.querySelector('.notranslate');
-    if (notranslateSelf && notranslateSelf.textContent) {
-      const txt = notranslateSelf.textContent.trim().toLowerCase();
-      if (txt === 'you' || txt === 'ви' || txt === 'вы') {
-        return true;
-      }
-    }
-
-    // 2. Check for "Stop presenting" or "Your presentation" buttons inside tile
-    const buttons = Array.from(tile.querySelectorAll<HTMLButtonElement>('button'));
-    const stopRegex = /(?:зупинити показ|припинити показ|зупинити презентацію|припинити презентацію|зупинити трансляцію|stop presenting|stop sharing|остановить показ|остановить презентацию)/i;
-    for (const btn of buttons) {
-      const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-      const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
-      const text = (btn.textContent || '').toLowerCase();
-
-      if (stopRegex.test(label) || stopRegex.test(tooltip) || stopRegex.test(text)) {
-        return true;
-      }
-
-      if (
-        label.includes('your presentation') ||
-        label.includes('ваша презентація') ||
-        label.includes('вашу презентацію') ||
-        tooltip.includes('your presentation') ||
-        tooltip.includes('ваша презентація')
-      ) {
-        return true;
-      }
-    }
-
-    // 3. Check for badges or text indicating own presentation
-    const textEls = Array.from(tile.querySelectorAll<HTMLElement>('span, div, p'));
-    for (const el of textEls) {
-      const txt = (el.textContent || '').trim().toLowerCase();
-      if (
-        txt.includes('ваша презентація') ||
-        txt.includes('your presentation') ||
-        txt.includes('ваша презентация') ||
-        txt.includes('ви транслюєте екран') ||
-        txt.includes('you are presenting') ||
-        txt.includes('ви показуєте екран') ||
-        txt.includes('зупинити показ') ||
-        txt.includes('припинити показ') ||
-        txt.includes('stop presenting')
-      ) {
-        return true;
-      }
-    }
-
-    return false;
-  }
 
   /**
    * Check if any stream is currently pinned or displayed on the main stage.
@@ -347,15 +295,9 @@ export class ScreenDetector {
       if (share.isPinned) return true;
     }
 
-    // 3. Check for explicit unpin button on screen (English, Ukrainian, Russian)
-    const unpinBtns = Array.from(document.querySelectorAll<HTMLButtonElement>(
-      'button[aria-label*="unpin" i], button[aria-label*="відкріп" i], button[aria-label*="откреп" i], button[data-tooltip*="unpin" i], button[data-tooltip*="відкріп" i], button[data-tooltip*="откреп" i]'
-    ));
+    // 3. Check for explicit unpin button on screen (English, Ukrainian, Russian, or keep_off icon)
+    const unpinBtns = MeetSelectors.findGlobalUnpinButtons(document);
     if (unpinBtns.some(btn => btn.offsetParent !== null || btn.clientWidth > 0)) return true;
-
-    // 4. Check for keep_off icon string anywhere
-    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
-    if (buttons.some((b) => (b.offsetParent !== null || b.clientWidth > 0) && (b.textContent || '').includes('keep_off'))) return true;
 
     // 5. Check for presentation zoom controls or ink canvas on page
     // (Google Meet ONLY renders zoom controls and ink canvas when a presentation is pinned on stage!)
@@ -458,12 +400,12 @@ export class ScreenDetector {
         const tile = this.findTileContainer(video);
         if (!tile) continue;
 
-        // Skip ended streams or teacher's own presentation
-        if (this.isMediaStreamEnded(video) || this.isTeacherPresentationTile(tile)) {
+        // Skip ended streams
+        if (this.isMediaStreamEnded(video)) {
           continue;
         }
 
-        if (this.isPresentationTile(tile, video)) {
+        console.log('Check tile', tile.getAttribute('data-participant-id'), 'isPres', this.isPresentationTile(tile, video), 'name', this.extractParticipantName(tile), 'pin', !!MeetSelectors.findPinButton(tile)); if (this.isPresentationTile(tile, video)) {
           const participantId =
             tile.getAttribute('data-participant-id') ||
             tile.getAttribute('data-requested-participant-id') ||
@@ -483,8 +425,8 @@ export class ScreenDetector {
           seenTileIds.add(tileId);
 
           const isPinned = this.isTilePinned(tile);
-          const pinButton = this.findPinButton(tile);
-          const unpinButton = this.findUnpinButton(tile);
+          const pinButton = MeetSelectors.findPinButton(tile);
+          const unpinButton = MeetSelectors.findUnpinButton(tile);
 
           this.logger.recordParticipantFound(participantName);
 
@@ -504,9 +446,18 @@ export class ScreenDetector {
       const consolidatedRawList: RawTile[] = [];
       for (const raw of rawList) {
         const norm = this.normalizeParticipantName(raw.participantName);
-        const existingIdx = consolidatedRawList.findIndex(
-          (r) => this.normalizeParticipantName(r.participantName) === norm
-        );
+        const existingIdx = consolidatedRawList.findIndex((r) => {
+          if (this.normalizeParticipantName(r.participantName) !== norm) return false;
+          
+          const rawIsReal = raw.id.includes(':pres') && !raw.id.startsWith('pres-');
+          const rIsReal = r.id.includes(':pres') && !r.id.startsWith('pres-');
+          
+          if (rawIsReal && rIsReal && raw.id !== r.id) {
+            // Do not merge if they are two distinct physical devices
+            return false;
+          }
+          return true;
+        });
         if (existingIdx >= 0) {
           const existing = consolidatedRawList[existingIdx];
           const rawIsRealDevice = raw.id.includes(':pres') && !raw.id.startsWith('pres-');
@@ -876,14 +827,8 @@ export class ScreenDetector {
     }
 
     // 1. Check for unpin button
-    const unpinBtn = this.findUnpinButton(tile);
+    const unpinBtn = MeetSelectors.findUnpinButton(tile);
     if (unpinBtn !== null) {
-      return true;
-    }
-
-    // 2. Check for keep_off icon string within this tile
-    const textContent = tile.textContent || '';
-    if (textContent.includes('keep_off')) {
       return true;
     }
 
@@ -910,11 +855,6 @@ export class ScreenDetector {
    * Extract human-readable participant name from the presentation tile.
    */
   public extractParticipantName(tile: HTMLElement): string {
-    // 0. Own presentation check
-    if (this.isTeacherPresentationTile(tile)) {
-      return 'Ваш екран (Ви)';
-    }
-
     // 0.1 Check if this tile's participant ID matches an already known non-generic participant share
     const participantId =
       tile.getAttribute('data-participant-id') ||
@@ -1084,65 +1024,7 @@ export class ScreenDetector {
       .trim();
   }
 
-  /**
-   * Find the Pin button inside a tile.
-   */
-  public findPinButton(tile: HTMLElement): HTMLButtonElement | null {
-    const buttons = Array.from(tile.querySelectorAll<HTMLButtonElement>('button'));
-    for (const btn of buttons) {
-      if (btn.offsetParent === null && btn.clientWidth === 0) continue;
-      const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-      const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
-      const text = btn.textContent || '';
 
-      const isUnpin =
-        label.includes('unpin') ||
-        label.includes('відкріп') ||
-        label.includes('откреп') ||
-        tooltip.includes('unpin') ||
-        tooltip.includes('відкріп') ||
-        text.includes('keep_off');
-
-      if (isUnpin) continue;
-
-      const isPin =
-        label.includes('pin') ||
-        label.includes('закріп') ||
-        tooltip.includes('pin') ||
-        tooltip.includes('закріп') ||
-        text.includes('keep_outline');
-
-      if (isPin) {
-        return btn;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Find the Unpin button inside a tile.
-   */
-  public findUnpinButton(tile: HTMLElement): HTMLButtonElement | null {
-    const buttons = Array.from(tile.querySelectorAll<HTMLButtonElement>('button'));
-    for (const btn of buttons) {
-      if (btn.offsetParent === null && btn.clientWidth === 0) continue;
-      const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-      const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
-      const text = btn.textContent || '';
-
-      if (
-        label.includes('unpin') ||
-        label.includes('відкріпити') ||
-        label.includes('открепить') ||
-        tooltip.includes('unpin') ||
-        tooltip.includes('відкріпити') ||
-        text.includes('keep_off')
-      ) {
-        return btn;
-      }
-    }
-    return null;
-  }
 
   private notifyListeners(): void {
     for (const listener of this.listeners) {

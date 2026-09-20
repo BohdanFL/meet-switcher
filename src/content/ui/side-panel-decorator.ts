@@ -1,4 +1,6 @@
 import { AliasManager } from '../alias-manager.ts';
+import { MEET_DICTIONARY } from './dictionary.ts';
+import { MeetSelectors } from './selectors.ts';
 
 export const SIDE_PANEL_BADGE_CLASS = 'meet-switcher-sidepanel-badge';
 export const SIDE_PANEL_ADD_BTN_CLASS = 'meet-switcher-sidepanel-add-btn';
@@ -203,7 +205,10 @@ export class SidePanelDecorator {
     const candidates = Array.from(
       row.querySelectorAll<HTMLElement>('.zSX24d span, span.notranslate, span[title], span')
     );
-    const isPresentationWord = (t: string) => /^(?:presentation|презентація|презентация|трансляція)$/i.test(t);
+    const isPresentationWord = (t: string) => {
+      const match = t.match(MEET_DICTIONARY.PRESENTATION.PRESENTATION_KEYWORD);
+      return match !== null && match[0].length === t.length;
+    };
     for (const el of candidates) {
       if (
         isIconElement(el) ||
@@ -257,7 +262,7 @@ export class SidePanelDecorator {
   public extractParticipantInfo(row: HTMLElement): ParticipantRowInfo | null {
     if (!row || typeof row.querySelectorAll !== 'function') return null;
 
-    const presentationRegex = /(?:presentation|презентац|present_to_all|трансляц)/i;
+    const presentationRegex = MEET_DICTIONARY.PRESENTATION.PRESENTATION_KEYWORD;
     const rowText = (row.textContent || '') + ' ' + (row.getAttribute('aria-label') || '');
     const buttons = Array.from(row.querySelectorAll<HTMLElement>('button, [role="button"]'));
     const buttonLabels = buttons.map((b) => b.getAttribute('aria-label') || b.getAttribute('data-tooltip') || '').join(' ');

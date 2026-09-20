@@ -1,5 +1,7 @@
 import type { ScreenShare } from '../types/index.ts';
 import { ScreenDetector } from './detector.ts';
+import { MEET_DICTIONARY } from './ui/dictionary.ts';
+import { MeetSelectors } from './ui/selectors.ts';
 import { AnimationKiller } from './animation-killer.ts';
 import { DiagnosticsLogger } from '../diagnostics/logger.ts';
 
@@ -12,6 +14,10 @@ export class PinController {
   constructor(detector: ScreenDetector, animationKiller?: AnimationKiller) {
     this.detector = detector;
     this.animationKiller = animationKiller;
+  }
+
+  public getDetector(): ScreenDetector {
+    return this.detector;
   }
 
   public setAnimationKiller(ak: AnimationKiller): void {
@@ -144,7 +150,7 @@ export class PinController {
             if (share.id !== target.id && share.isPinned && share.tileElement && document.body?.contains(share.tileElement)) {
               this.hoverTile(share.tileElement);
               await this.sleep(40);
-              const otherUnpin = this.detector.findUnpinButton(share.tileElement);
+              const otherUnpin = MeetSelectors.findUnpinButton(share.tileElement);
               if (otherUnpin) {
                 this.dispatchFullClick(otherUnpin);
               }
@@ -209,13 +215,13 @@ export class PinController {
       this.hoverTile(currentTile);
 
       // 3. Locate Pin button on target tile with retries
-      let pinBtn = this.detector.findPinButton(currentTile);
+      let pinBtn = MeetSelectors.findPinButton(currentTile);
 
       if (!pinBtn) {
         for (let i = 0; i < 6; i++) {
           await this.sleep(40);
           this.hoverTile(currentTile);
-          pinBtn = this.detector.findPinButton(currentTile);
+          pinBtn = MeetSelectors.findPinButton(currentTile);
           if (pinBtn) break;
         }
       }
@@ -238,7 +244,7 @@ export class PinController {
           if (share.id !== target.id && share.isPinned && share.tileElement) {
             this.hoverTile(share.tileElement);
             await this.sleep(40);
-            const otherUnpin = this.detector.findUnpinButton(share.tileElement);
+            const otherUnpin = MeetSelectors.findUnpinButton(share.tileElement);
             if (otherUnpin) {
               this.dispatchFullClick(otherUnpin);
             }
@@ -287,7 +293,7 @@ export class PinController {
       if (retryTile && document.body.contains(retryTile)) {
         await this.ensureTileVisible(retryTile);
         this.hoverTile(retryTile);
-        pinBtn = this.detector.findPinButton(retryTile);
+        pinBtn = MeetSelectors.findPinButton(retryTile);
 
         if (pinBtn) {
           this.logger.log('ACTION', `Dispatched retry Pin click on tile for "${target.participantName}"`);
@@ -323,7 +329,7 @@ export class PinController {
       if (share.isPinned && share.tileElement && document.body.contains(share.tileElement)) {
         this.hoverTile(share.tileElement);
         await this.sleep(40);
-        const unpinBtn = this.detector.findUnpinButton(share.tileElement);
+        const unpinBtn = MeetSelectors.findUnpinButton(share.tileElement);
         if (unpinBtn) {
           this.dispatchFullClick(unpinBtn);
           unpinned = true;
@@ -333,23 +339,10 @@ export class PinController {
 
     // 2. Fallback: Search globally for any active unpin button on the main stage
     if (!unpinned) {
-      const globalButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
+      const globalButtons = MeetSelectors.findGlobalUnpinButtons(document);
       for (const btn of globalButtons) {
-        const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-        const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
-        const text = btn.textContent || '';
-
-        if (
-          label.includes('unpin') ||
-          label.includes('відкріпити') ||
-          label.includes('открепить') ||
-          tooltip.includes('unpin') ||
-          tooltip.includes('відкріпити') ||
-          tooltip.includes('открепить') ||
-          text.includes('keep_off')
-        ) {
-          this.dispatchFullClick(btn);
-        }
+        if (btn.offsetParent === null && btn.clientWidth === 0) continue;
+        this.dispatchFullClick(btn);
       }
     }
 
@@ -363,21 +356,18 @@ export class PinController {
     const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
     if (!targetDoc?.querySelector) return false;
 
-    const peopleBtn = targetDoc.querySelector<HTMLButtonElement>(
-      'button[aria-label*="People" i], button[aria-label*="учасник" i], button[aria-label*="люди" i], button[aria-label*="show everyone" i], button[aria-label*="показати всіх" i]'
-    );
+    const peopleBtn = MeetSelectors.findPeoplePanelBtn(targetDoc);
     if (peopleBtn) {
       const isPressed = peopleBtn.getAttribute('aria-pressed') === 'true';
       const hasClass = Boolean(peopleBtn.classList?.contains && peopleBtn.classList.contains('qs41qe'));
       if (isPressed || hasClass) {
         return true;
       }
+      // If button exists but is not pressed, it means panel is closed
       return false;
     }
 
-    const panel = targetDoc.querySelector(
-      'div[role="tabpanel"][aria-label*="People" i], div[role="tabpanel"][aria-label*="учасник" i], div[role="tabpanel"][aria-label*="люди" i], div[role="list"][aria-label*="Participants" i]'
-    );
+    const panel = MeetSelectors.findPeoplePanel(targetDoc);
     return Boolean(panel);
   }
 
@@ -389,9 +379,7 @@ export class PinController {
     const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
     if (!targetDoc?.querySelector) return false;
 
-    const peopleBtn = targetDoc.querySelector<HTMLButtonElement>(
-      'button[aria-label*="People" i], button[aria-label*="учасник" i], button[aria-label*="люди" i], button[aria-label*="show everyone" i], button[aria-label*="показати всіх" i]'
-    );
+    const peopleBtn = MeetSelectors.findPeoplePanelBtn(targetDoc);
     if (!peopleBtn) {
       this.logger.log('WARN', 'Could not locate People button to open side panel');
       return false;
@@ -423,17 +411,13 @@ export class PinController {
     // Search inside People/In call container, Side panel aside, or whole document
     // NOTE: Avoid bare 'div[role="tabpanel"]' as it matches the Activities/Add-ons panel!
     const panel: any =
-      (targetDoc.querySelector && (
-        targetDoc.querySelector<HTMLElement>('[aria-label="In call"], [aria-label*="дзвінк" i], [aria-label*="вызов" i]') ||
-        targetDoc.querySelector<HTMLElement>('aside[aria-label*="Side panel" i], aside') ||
-        targetDoc.querySelector<HTMLElement>('div[aria-label*="People" i], div[aria-label*="учасник" i], div[aria-label*="люди" i]')
-      )) ||
+      MeetSelectors.findPeoplePanel(targetDoc) ||
       (targetDoc as any).body ||
       targetDoc;
 
     if (!panel || typeof panel.querySelectorAll !== 'function') return null;
 
-    const presentationRegex = /(?:presentation|презентац|present_to_all|трансляц)/i;
+    const presentationRegex = MEET_DICTIONARY.PRESENTATION.PRESENTATION_KEYWORD;
 
     // Pass 1: Direct presentation action buttons (e.g. "Mute Bohdan Rubakha's presentation")
     const allButtons: HTMLElement[] = Array.from(panel.querySelectorAll('button, [role="button"]'));
@@ -465,7 +449,11 @@ export class PinController {
       const combined = `${text} ${aria}`.toLowerCase();
       const normCombined = this.detector.normalizeParticipantName(combined);
 
-      if (normCombined.includes(normTarget) || combined.includes(participantName.toLowerCase())) {
+      if (normCombined.includes(normTarget) || combined.includes(participantName.toLowerCase()) || (isTeacherSelf && (combined.includes('you') || combined.includes('ви') || combined.includes('вы')))) {
+        if (!requirePresentation) {
+          return item;
+        }
+
         if (presentationRegex.test(combined)) {
           return item;
         }
@@ -533,8 +521,19 @@ export class PinController {
       await this.sleep(50);
     }
 
+    // Graceful Fallback: If we couldn't find an explicit presentation row,
+    // fallback to pinning their generic camera row.
+    if (!item && requirePresentation) {
+      this.logger.log('WARN', `Could not find explicit presentation item in People panel for "${participantName}". Falling back to generic participant row.`);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        item = this.findPresentationItemInPeoplePanel(participantName, doc, false);
+        if (item) break;
+        await this.sleep(50);
+      }
+    }
+
     if (!item) {
-      this.logger.log('WARN', `Could not find ${requirePresentation ? 'presentation' : 'participant'} item in People panel for "${participantName}"`);
+      this.logger.log('WARN', `Could not find any participant item in People panel for "${participantName}"`);
       return false;
     }
 
@@ -568,17 +567,13 @@ export class PinController {
         const aria = (b.getAttribute('aria-label') || '').toLowerCase();
         const text = (b.textContent || '').trim();
         return (
-          aria.includes('more action') ||
-          aria.includes('дії') ||
-          aria.includes('більше') ||
-          text === 'more_vert' ||
-          aria.includes('more_vert')
+          MEET_DICTIONARY.MORE_ACTIONS.test(aria) ||
+          MEET_DICTIONARY.MORE_ACTIONS.test(text) ||
+          text === MEET_DICTIONARY.ICONS.MORE_VERT ||
+          aria.includes(MEET_DICTIONARY.ICONS.MORE_VERT)
         );
       }) ||
-      (item.querySelector &&
-        item.querySelector<HTMLElement>(
-          'button[aria-label*="More" i], [role="button"][aria-label*="More" i], [data-tooltip*="More" i]'
-        ));
+      (item.querySelector && Array.from(item.querySelectorAll<HTMLElement>('button, [role="button"]')).find(b => MEET_DICTIONARY.MORE_ACTIONS.test((b.getAttribute('aria-label') || '').toLowerCase())));
 
     if (moreBtn && targetDoc?.querySelectorAll) {
       this.dispatchFullClick(moreBtn);
@@ -711,8 +706,8 @@ export class PinController {
 
         if (items.length === 0) continue;
 
-        const forMyselfRegex = /(?:myself|for me|лише для мене|для мене|себе|себя)/i;
-        const forEveryoneRegex = /(?:everyone|all|для всіх|для всех)/i;
+        const forMyselfRegex = MEET_DICTIONARY.HOST_PIN_MENU.FOR_MYSELF_ONLY;
+        const forEveryoneRegex = MEET_DICTIONARY.HOST_PIN_MENU.FOR_EVERYONE;
 
         // STRICT CHECK: The menu MUST contain at least one option matching forMyselfRegex or forEveryoneRegex.
         // Otherwise, it is an unrelated menu (e.g. 3-dots actions menu) and must NOT be clicked!

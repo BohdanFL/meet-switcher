@@ -100,26 +100,37 @@ test('isPeoplePanelOpen detects open state by button aria-pressed and tabpanel',
 
   const docClosed = {
     querySelector: (sel: string) => {
-      if (sel.includes('People') || sel.includes('учасник')) {
-        const btn = new MockElement('button');
-        btn.setAttribute('aria-pressed', 'false');
-        return btn;
+      if (sel.includes('People') || sel.includes('учасник') || sel.includes('Side panel')) {
+        return null; // Return null for panel
       }
       return null;
     },
+    querySelectorAll: (sel: string) => {
+      if (sel.includes('button')) {
+        const btn = new MockElement('button');
+        btn.setAttribute('aria-label', 'People');
+        btn.setAttribute('aria-pressed', 'false');
+        return [btn];
+      }
+      return [];
+    }
   } as any;
 
   assert.equal(controller.isPeoplePanelOpen(docClosed), false);
 
   const docOpen = {
     querySelector: (sel: string) => {
-      if (sel.includes('People') || sel.includes('учасник')) {
-        const btn = new MockElement('button');
-        btn.setAttribute('aria-pressed', 'true');
-        return btn;
-      }
       return null;
     },
+    querySelectorAll: (sel: string) => {
+      if (sel.includes('button')) {
+        const btn = new MockElement('button');
+        btn.setAttribute('aria-label', 'People');
+        btn.setAttribute('aria-pressed', 'true');
+        return [btn];
+      }
+      return [];
+    }
   } as any;
 
   assert.equal(controller.isPeoplePanelOpen(docOpen), true);
@@ -173,11 +184,14 @@ test('openPeoplePanel clicks People button when closed and verifies open state',
 
   const doc = {
     querySelector: (sel: string) => {
-      if (sel.includes('People') || sel.includes('everyone') || sel.includes('учасник')) {
-        return peopleBtn;
-      }
       return null;
     },
+    querySelectorAll: (sel: string) => {
+      if (sel.includes('button')) {
+        return [peopleBtn];
+      }
+      return [];
+    }
   } as any;
 
   const opened = await controller.openPeoplePanel(doc);
