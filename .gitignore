@@ -4,3 +4,4 @@ dist/
 *.log
 scratch/
 test_out.txt
+.chrome-dev-profile/

@@ -22,6 +22,12 @@ export const MEET_DICTIONARY = {
     // Note: Teacher presentation filters have been intentionally removed
     // to treat the local user's presentation as a standard participant tile.
     PRESENTATION_KEYWORD: /(?:presentation|презентац|present_to_all|трансляц)/i,
+    CHILD_SELECTOR: 'i, span, [aria-label*="presentation" i], [aria-label*="презентац" i], [aria-label*="трансляц" i]',
+  },
+
+  // Teacher / Self identifiers used when matching the local presenter tile or row
+  TEACHER_SELF: {
+    KEYWORD: /(?:you|your screen|ви|ваш екран|ваш|вы|ваш экран)/i,
   },
 
   // Google Meet Host Pin Menu explicitly has "For myself only" vs "For everyone"

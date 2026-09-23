@@ -65,7 +65,7 @@ export class MeetSidePanelUI {
    */
   public findPresentationItemInPeoplePanel(participantName: string, doc: Document = (typeof document !== 'undefined' ? document : ({} as any)), requirePresentation = true): HTMLElement | null {
     const normTarget = this.detector.normalizeParticipantName(participantName);
-    const isTeacherSelf = normTarget.includes('you') || normTarget.includes('your screen') || normTarget.includes('?') || normTarget.includes('you');
+    const isTeacherSelf = MEET_DICTIONARY.TEACHER_SELF.KEYWORD.test(normTarget);
     if (!normTarget) return null;
 
     const targetDoc = doc || (typeof document !== 'undefined' ? document : null);
@@ -84,7 +84,7 @@ export class MeetSidePanelUI {
     for (const btn of allButtons) {
       const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
       if (
-        (aria.includes(normTarget) || aria.includes(participantName.toLowerCase()) || (isTeacherSelf && (aria.includes('you') || aria.includes('?') || aria.includes('?<')))) &&
+        (aria.includes(normTarget) || aria.includes(participantName.toLowerCase()) || (isTeacherSelf && MEET_DICTIONARY.TEACHER_SELF.KEYWORD.test(aria))) &&
         (!requirePresentation || presentationRegex.test(aria))
       ) {
         const row =
@@ -108,7 +108,7 @@ export class MeetSidePanelUI {
       const combined = `${text} ${aria}`.toLowerCase();
       const normCombined = this.detector.normalizeParticipantName(combined);
 
-      if (normCombined.includes(normTarget) || combined.includes(participantName.toLowerCase()) || (isTeacherSelf && (combined.includes('you') || combined.includes('?') || combined.includes('?<')))) {
+      if (normCombined.includes(normTarget) || combined.includes(participantName.toLowerCase()) || (isTeacherSelf && MEET_DICTIONARY.TEACHER_SELF.KEYWORD.test(combined))) {
         if (!requirePresentation) {
           return item;
         }
@@ -118,7 +118,7 @@ export class MeetSidePanelUI {
         }
 
         const presChild = item.querySelector && item.querySelector(
-          'i, span, [aria-label*="presentation" i], [aria-label*="презентац" i]'
+          MEET_DICTIONARY.PRESENTATION.CHILD_SELECTOR
         );
         if (presChild) {
           const childText = (presChild.textContent || '').toLowerCase();
