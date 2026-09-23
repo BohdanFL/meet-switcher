@@ -7,11 +7,18 @@
     "build": "node scripts/build.js",
     "dev": "node scripts/build.js --watch",
     "typecheck": "tsc --noEmit",
+    "lint:deadcode": "knip",
+    "lint": "eslint \"src/**/*.ts\"",
     "test": "node --test --experimental-strip-types tests/detector.test.ts tests/logger.test.ts tests/call-monitor.test.ts tests/alias-manager.test.ts tests/tile-badge.test.ts tests/side-panel-decorator.test.ts tests/pin-controller.test.ts tests/wall.test.ts tests/groups.test.ts tests/group-store.test.ts tests/title-detector.test.ts tests/attendance-tracker.test.ts tests/lms-parser.test.ts tests/attendance-modal.test.ts tests/hud-attendance.test.ts"
   },
   "devDependencies": {
+    "@ast-grep/cli": "^0.45.3",
+    "@eslint/js": "^10.0.1",
     "@types/chrome": "^0.0.308",
+    "eslint": "^10.11.0",
+    "knip": "^6.37.0",
     "typescript": "^5.8.2",
+    "typescript-eslint": "^8.70.0",
     "vite": "^6.2.0"
   }
 }

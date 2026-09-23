@@ -1,0 +1,10 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema-json.json",
+  "entry": [
+    "src/content/index.ts",
+    "src/background/service-worker.ts",
+    "src/popup/popup.ts",
+    "src/lms/index.ts"
+  ],
+  "ignoreDependencies": ["@types/chrome"]
+}

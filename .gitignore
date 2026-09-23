@@ -2,3 +2,5 @@ node_modules/
 dist/
 .playwright-mcp/
 *.log
+scratch/
+test_out.txt
